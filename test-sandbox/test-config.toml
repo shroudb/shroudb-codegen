@@ -1,0 +1,27 @@
+# Test server configuration for client sandbox.
+# Matches the keyspace layout from shroudb-server/tests/common/mod.rs.
+
+[server]
+bind = "127.0.0.1:{{PORT}}"
+metrics_bind = "127.0.0.1:0"
+
+[storage]
+data_dir = "{{DATA_DIR}}"
+
+[keyspaces.test-jwt]
+type = "jwt"
+algorithm = "ES256"
+default_ttl = "15m"
+
+[keyspaces.test-apikeys]
+type = "api_key"
+prefix = "sk"
+
+[keyspaces.test-hmac]
+type = "hmac"
+algorithm = "sha256"
+
+[keyspaces.test-refresh]
+type = "refresh_token"
+token_ttl = "30d"
+max_chain_length = 10
