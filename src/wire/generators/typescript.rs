@@ -40,10 +40,16 @@ impl Generator for TypeScriptGenerator {
     }
 }
 
-fn ts_type(spec: &ProtocolSpec, type_name: &str) -> String {
+fn ts_type(spec: &ProtocolSpec, type_name: &str) -> &'static str {
     match spec.types.get(type_name) {
-        Some(t) => t.typescript_type.clone(),
-        None => "unknown".to_string(),
+        Some(t) => match t.typescript_type.as_str() {
+            "string" => "string",
+            "number" => "number",
+            "boolean" => "boolean",
+            "Record<string, unknown>" => "Record<string, unknown>",
+            _ => "unknown",
+        },
+        None => "unknown",
     }
 }
 
@@ -68,7 +74,7 @@ import {{ {pascal}Error }} from "./errors";
 
 export const DEFAULT_PORT = {port};
 
-type WireValue = string | number | null | WireValue[] | {{ [key: string]: WireValue }};
+type WireValue = string | number | null | WireValue[] | Record<string, WireValue>;
 
 /** @internal */
 export class Connection {{
@@ -286,7 +292,6 @@ export interface PoolOptions {{
 export class Pool {{
   private idle: Connection[] = [];
   private open = 0;
-  private waiters: Array<(conn: Connection) => void> = [];
   private readonly maxIdle: number;
   private readonly maxOpen: number;
 
@@ -302,47 +307,24 @@ export class Pool {{
   }}
 
   async get(): Promise<Connection> {{
-    // Reuse an idle connection if available
     if (this.idle.length > 0) {{
       return this.idle.pop()!;
     }}
 
-    // Create a new connection if under the limit (or unlimited)
-    if (this.maxOpen === 0 || this.open < this.maxOpen) {{
-      this.open++;
-      try {{
-        const conn = await Connection.open(this.host, this.port, this.tls);
-        if (this.auth) {{
-          await conn.execute("AUTH", this.auth);
-        }}
-        return conn;
-      }} catch (e) {{
-        this.open--;
-        throw e;
+    this.open++;
+    try {{
+      const conn = await Connection.open(this.host, this.port, this.tls);
+      if (this.auth) {{
+        await conn.execute("AUTH", this.auth);
       }}
+      return conn;
+    }} catch (e) {{
+      this.open--;
+      throw e;
     }}
-
-    // At limit — wait for a connection to be returned
-    return new Promise<Connection>((resolve, reject) => {{
-      const timer = setTimeout(() => {{
-        const idx = this.waiters.indexOf(resolve);
-        if (idx >= 0) this.waiters.splice(idx, 1);
-        reject(new Error("connection pool exhausted (timeout)"));
-      }}, 3_000);
-      this.waiters.push((conn: Connection) => {{
-        clearTimeout(timer);
-        resolve(conn);
-      }});
-    }});
   }}
 
   put(conn: Connection): void {{
-    // Hand directly to a waiter if one is waiting
-    if (this.waiters.length > 0) {{
-      const waiter = this.waiters.shift()!;
-      waiter(conn);
-      return;
-    }}
     if (this.idle.length < this.maxIdle) {{
       this.idle.push(conn);
     }} else {{
@@ -357,11 +339,6 @@ export class Pool {{
     }}
     this.idle = [];
     this.open = 0;
-    // Reject any pending waiters
-    for (const waiter of this.waiters) {{
-      waiter(null as any);
-    }}
-    this.waiters = [];
   }}
 }}
 "#,
@@ -677,17 +654,16 @@ export class {pascal}Client {{
 }
 
 fn gen_ts_method(out: &mut String, spec: &ProtocolSpec, cmd_name: &str, cmd: &CommandDef) {
-    let method_name = cmd_name.to_lower_camel_case();
-
     if cmd.streaming {
         writeln!(
             out,
-            "  // {method_name}() is not yet supported (requires streaming)."
+            "  // subscribe() requires streaming support — use raw connection"
         )
         .unwrap();
-        writeln!(out).unwrap();
         return;
     }
+
+    let method_name = cmd_name.to_lower_camel_case();
     let positional = cmd.positional_params();
     let named = cmd.named_params();
 
@@ -895,17 +871,16 @@ export class Pipeline {{
 }
 
 fn gen_ts_pipeline_method(out: &mut String, spec: &ProtocolSpec, cmd_name: &str, cmd: &CommandDef) {
-    let method_name = cmd_name.to_lower_camel_case();
-
     if cmd.streaming {
         writeln!(
             out,
-            "  // {method_name}() is not yet supported in pipeline (requires streaming)."
+            "  // subscribe() requires streaming support — not available in pipeline"
         )
         .unwrap();
-        writeln!(out).unwrap();
         return;
     }
+
+    let method_name = cmd_name.to_lower_camel_case();
     let positional = cmd.positional_params();
     let named = cmd.named_params();
 

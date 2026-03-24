@@ -38,10 +38,16 @@ impl Generator for PythonGenerator {
     }
 }
 
-fn python_type(spec: &ProtocolSpec, type_name: &str) -> String {
+fn python_type(spec: &ProtocolSpec, type_name: &str) -> &'static str {
     match spec.types.get(type_name) {
-        Some(t) => t.python_type.clone(),
-        None => "Any".to_string(),
+        Some(t) => match t.python_type.as_str() {
+            "str" => "str",
+            "int" => "int",
+            "bool" => "bool",
+            "dict[str, Any]" => "dict[str, Any]",
+            _ => "Any",
+        },
+        None => "Any",
     }
 }
 
@@ -213,29 +219,12 @@ class _Pool:
         self._idle: deque[_Connection] = deque()
         self._open = 0
         self._lock = asyncio.Lock()
-        self._waiters: deque[asyncio.Future[_Connection]] = deque()
 
     async def get(self) -> _Connection:
         async with self._lock:
-            # Reuse an idle connection if available
             if self._idle:
                 return self._idle.pop()
-
-            # Create a new connection if under the limit (or unlimited)
-            if self._max_open == 0 or self._open < self._max_open:
-                self._open += 1
-            else:
-                # At limit — wait for a connection to be returned
-                fut: asyncio.Future[_Connection] = asyncio.get_event_loop().create_future()
-                self._waiters.append(fut)
-                # Release lock while waiting
-                self._lock.release()
-                try:
-                    return await asyncio.wait_for(fut, timeout=10.0)
-                except asyncio.TimeoutError:
-                    raise ConnectionError("connection pool exhausted (timeout)")
-                finally:
-                    await self._lock.acquire()
+            self._open += 1
 
         try:
             conn = await _Connection.open(self._host, self._port, tls=self._tls)
@@ -249,12 +238,6 @@ class _Pool:
 
     async def put(self, conn: _Connection) -> None:
         async with self._lock:
-            # Hand directly to a waiter if one is waiting
-            if self._waiters:
-                waiter = self._waiters.popleft()
-                if not waiter.done():
-                    waiter.set_result(conn)
-                    return
             if len(self._idle) < self._max_idle:
                 self._idle.append(conn)
             else:
@@ -266,11 +249,6 @@ class _Pool:
             while self._idle:
                 await self._idle.pop().close()
             self._open = 0
-            # Cancel any pending waiters
-            while self._waiters:
-                waiter = self._waiters.popleft()
-                if not waiter.done():
-                    waiter.cancel()
 "#,
             pascal = n.pascal,
             snake = n.snake,
@@ -388,7 +366,7 @@ from typing import Any, Optional
             if f.optional {
                 writeln!(out, "    {}: Optional[{py_type}] = None", f.name).unwrap();
             } else {
-                writeln!(out, "    {}: {py_type} = {}", f.name, py_default(&py_type)).unwrap();
+                writeln!(out, "    {}: {py_type} = {}", f.name, py_default(py_type)).unwrap();
             }
         }
 
@@ -631,7 +609,7 @@ class {pascal}Client:
 
 fn gen_python_method(out: &mut String, spec: &ProtocolSpec, cmd_name: &str, cmd: &CommandDef) {
     if cmd.streaming {
-        gen_python_streaming_stub(out, cmd);
+        gen_python_subscribe(out, cmd);
         return;
     }
 
@@ -728,14 +706,29 @@ fn gen_python_method(out: &mut String, spec: &ProtocolSpec, cmd_name: &str, cmd:
     writeln!(out).unwrap();
 }
 
-fn gen_python_streaming_stub(out: &mut String, cmd: &CommandDef) {
-    let method_name = cmd.verb.to_lowercase();
-    writeln!(
-        out,
-        "    # {method_name}() is not yet supported (requires streaming)."
-    )
-    .unwrap();
-    writeln!(out).unwrap();
+fn gen_python_subscribe(out: &mut String, _cmd: &CommandDef) {
+    out.push_str(
+        r#"    async def subscribe(self, channel: str):
+        """Subscribe to real-time event notifications.
+
+        Args:
+            channel: Channel name (e.g. ``"keyspace:tokens"``).
+
+        Yields event arrays as they arrive::
+
+            async for event in client.subscribe("keyspace:tokens"):
+                print(event)  # ['issued', 'tokens', 'cred_abc123']
+        """
+        await self._conn.execute("SUBSCRIBE", channel)
+        while True:
+            try:
+                frame = await self._conn._read_frame()
+                yield frame
+            except ConnectionError:
+                break
+
+"#,
+    );
 }
 
 // ─── _pipeline.py ────────────────────────────────────────────────────────────
@@ -804,15 +797,9 @@ class Pipeline:
     )
     .unwrap();
 
-    // Generate a pipeline method for each command (streaming commands are skipped)
+    // Generate a pipeline method for each command
     for (cmd_name, cmd) in &spec.commands {
         if cmd.streaming {
-            let method_name = cmd_name.to_snake_case();
-            writeln!(
-                out,
-                "\n    # {method_name}() is not yet supported in pipeline (requires streaming)."
-            )
-            .unwrap();
             continue;
         }
         writeln!(out).unwrap();

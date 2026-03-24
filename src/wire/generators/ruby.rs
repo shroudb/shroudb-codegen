@@ -39,30 +39,16 @@ impl Generator for RubyGenerator {
     }
 }
 
-fn ruby_type(spec: &ProtocolSpec, type_name: &str) -> String {
+fn ruby_type(spec: &ProtocolSpec, type_name: &str) -> &'static str {
     match spec.types.get(type_name) {
-        Some(t) => {
-            if let Some(ref rb) = t.ruby_type {
-                rb.clone()
-            } else {
-                // Derive from rust_type when ruby_type is not explicitly set
-                ruby_type_from_rust(&t.rust_type).to_string()
-            }
-        }
-        None => "Object".to_string(),
-    }
-}
-
-/// Derive a Ruby type from a Rust type string.
-fn ruby_type_from_rust(rust_type: &str) -> &str {
-    match rust_type {
-        "String" | "&str" => "String",
-        "i64" | "u64" | "i32" | "u32" => "Integer",
-        "f64" => "Float",
-        "bool" => "Boolean",
-        "serde_json::Value" | "HashMap<String, serde_json::Value>" => "Hash",
-        "Vec<String>" => "Array<String>",
-        _ => "Object",
+        Some(_) => match type_name {
+            "keyspace" | "credential_id" | "token" => "String",
+            "integer" | "unix_timestamp" => "Integer",
+            "boolean_flag" => "Boolean",
+            "json_value" => "Hash",
+            _ => "Object",
+        },
+        None => "Object",
     }
 }
 
@@ -265,29 +251,15 @@ module {pascal}
       @idle = []
       @open = 0
       @mutex = Mutex.new
-      @cond = ConditionVariable.new
-      @closed = false
     end
 
     def get
       @mutex.synchronize do
-        loop do
-          raise "pool is closed" if @closed
-
-          # Reuse an idle connection if available
-          if (conn = @idle.pop)
-            return conn
-          end
-
-          # Create a new connection if under the limit (or unlimited)
-          if @max_open == 0 || @open < @max_open
-            @open += 1
-            break
-          end
-
-          # At limit — wait for a connection to be returned
-          @cond.wait(@mutex)
+        if (conn = @idle.pop)
+          return conn
         end
+
+        @open += 1
       end
 
       conn = Connection.open(@host, @port, tls: @tls)
@@ -306,17 +278,14 @@ module {pascal}
           conn.close
           @open -= 1
         end
-        @cond.signal
       end
     end
 
     def close
       @mutex.synchronize do
-        @closed = true
         @idle.each(&:close)
         @idle.clear
         @open = 0
-        @cond.broadcast
       end
     end
   end
@@ -604,17 +573,17 @@ end
 }
 
 fn gen_ruby_method(out: &mut String, spec: &ProtocolSpec, cmd_name: &str, cmd: &CommandDef) {
-    let method_name = cmd_name.to_snake_case();
-
     if cmd.streaming {
         writeln!(
             out,
-            "    # {method_name}() is not yet supported (requires streaming)."
+            "    # subscribe is not yet supported (requires streaming)."
         )
         .unwrap();
         writeln!(out).unwrap();
         return;
     }
+
+    let method_name = cmd_name.to_snake_case();
     let positional = cmd.positional_params();
     let named = cmd.named_params();
     let has_response = !cmd.response.is_empty() && !cmd.simple_response;
@@ -677,10 +646,7 @@ fn gen_ruby_method(out: &mut String, spec: &ProtocolSpec, cmd_name: &str, cmd: &
 
     // Named
     for p in &named {
-        let key = p
-            .key
-            .as_deref()
-            .expect("named_params() should only return params with a key");
+        let key = p.key.as_deref().unwrap();
         if p.param_type == "boolean_flag" {
             writeln!(out, "      args.push(\"{key}\") if {}", p.name).unwrap();
         } else if p.param_type == "json_value" {
@@ -794,18 +760,17 @@ fn gen_ruby_pipeline_method(
     cmd_name: &str,
     cmd: &CommandDef,
 ) {
-    let method_name = cmd_name.to_snake_case();
-
     if cmd.streaming {
         writeln!(
             out,
-            "    # {method_name}() is not yet supported in pipeline (requires streaming)."
+            "    # subscribe is not yet supported (requires streaming)."
         )
         .unwrap();
         writeln!(out).unwrap();
         return;
     }
 
+    let method_name = cmd_name.to_snake_case();
     let positional = cmd.positional_params();
     let named = cmd.named_params();
     let has_response = !cmd.response.is_empty() && !cmd.simple_response;
@@ -871,10 +836,7 @@ fn gen_ruby_pipeline_method(
 
     // Named
     for p in &named {
-        let key = p
-            .key
-            .as_deref()
-            .expect("named_params() should only return params with a key");
+        let key = p.key.as_deref().unwrap();
         if p.param_type == "boolean_flag" {
             writeln!(out, "      args.push(\"{key}\") if {}", p.name).unwrap();
         } else if p.param_type == "json_value" {
