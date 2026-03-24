@@ -172,38 +172,58 @@ export SHROUDB_TEST_URI="shroudb://127.0.0.1:$PORT"
 
 # ── Detect runtimes ─────────────────────────────────────────────────────────
 
-declare -A RUNTIMES
-RUNTIMES[python]=""
-RUNTIMES[typescript]=""
-RUNTIMES[go]=""
-RUNTIMES[ruby]=""
+HAS_PYTHON=false
+HAS_TYPESCRIPT=false
+HAS_GO=false
+HAS_RUBY=false
 
-if command -v python3 &>/dev/null; then RUNTIMES[python]="python3"; fi
-if command -v node &>/dev/null && command -v npx &>/dev/null; then RUNTIMES[typescript]="npx"; fi
-if command -v go &>/dev/null; then RUNTIMES[go]="go"; fi
-if command -v ruby &>/dev/null; then RUNTIMES[ruby]="ruby"; fi
+if command -v python3 &>/dev/null; then HAS_PYTHON=true; fi
+if command -v node &>/dev/null && command -v npx &>/dev/null; then HAS_TYPESCRIPT=true; fi
+if command -v go &>/dev/null; then HAS_GO=true; fi
+if command -v ruby &>/dev/null; then HAS_RUBY=true; fi
 
 # ── Run tests ───────────────────────────────────────────────────────────────
 
-declare -A RESULTS
 TOTAL_PASS=0
 TOTAL_FAIL=0
 TOTAL_SKIP=0
 
+RESULT_PYTHON="SKIP"
+RESULT_TYPESCRIPT="SKIP"
+RESULT_GO="SKIP"
+RESULT_RUBY="SKIP"
+
+set_result() {
+  case "$1" in
+    python)     RESULT_PYTHON="$2" ;;
+    typescript) RESULT_TYPESCRIPT="$2" ;;
+    go)         RESULT_GO="$2" ;;
+    ruby)       RESULT_RUBY="$2" ;;
+  esac
+}
+
+has_runtime() {
+  case "$1" in
+    python)     $HAS_PYTHON ;;
+    typescript) $HAS_TYPESCRIPT ;;
+    go)         $HAS_GO ;;
+    ruby)       $HAS_RUBY ;;
+  esac
+}
+
 run_test() {
   local lang="$1"
-  local runtime="${RUNTIMES[$lang]}"
 
   if [[ -n "$LANG_FILTER" && "$lang" != "$LANG_FILTER" ]]; then
-    RESULTS[$lang]="SKIP (filtered)"
+    set_result "$lang" "SKIP (filtered)"
     TOTAL_SKIP=$((TOTAL_SKIP + 1))
     return
   fi
 
-  if [[ -z "$runtime" ]]; then
+  if ! has_runtime "$lang"; then
     echo "=== $lang === SKIP (runtime not found)"
     echo ""
-    RESULTS[$lang]="SKIP (no runtime)"
+    set_result "$lang" "SKIP (no runtime)"
     TOTAL_SKIP=$((TOTAL_SKIP + 1))
     return
   fi
@@ -241,10 +261,10 @@ run_test() {
   esac
 
   if [[ $exit_code -eq 0 ]]; then
-    RESULTS[$lang]="PASS"
+    set_result "$lang" "PASS"
     TOTAL_PASS=$((TOTAL_PASS + 1))
   else
-    RESULTS[$lang]="FAIL"
+    set_result "$lang" "FAIL"
     TOTAL_FAIL=$((TOTAL_FAIL + 1))
   fi
   echo ""
@@ -258,14 +278,14 @@ run_test ruby
 # ── Results ─────────────────────────────────────────────────────────────────
 
 echo "=== Results ==="
-printf "  %-14s %s\n" "Python" "${RESULTS[python]}"
-printf "  %-14s %s\n" "TypeScript" "${RESULTS[typescript]}"
-printf "  %-14s %s\n" "Go" "${RESULTS[go]}"
-printf "  %-14s %s\n" "Ruby" "${RESULTS[ruby]}"
+printf "  %-14s %s\n" "Python" "$RESULT_PYTHON"
+printf "  %-14s %s\n" "TypeScript" "$RESULT_TYPESCRIPT"
+printf "  %-14s %s\n" "Go" "$RESULT_GO"
+printf "  %-14s %s\n" "Ruby" "$RESULT_RUBY"
 echo ""
 
 if [[ "$KEEP_SERVER" == "true" ]]; then
-  echo "Server still running on $SHROUDB_TEST_URI (PID $SERVER_PID)"
+  echo "Server still running on $SHROUDB_TEST_URI (PID ${SERVER_PID:-docker:${CONTAINER_ID:0:12}})"
 fi
 
 if [[ $TOTAL_FAIL -gt 0 ]]; then
