@@ -236,8 +236,9 @@ run_test() {
       (cd generated/python && python3 "$SCRIPT_DIR/tests/test_python.py") || exit_code=$?
       ;;
     typescript)
-      # Run with npx tsx --tsconfig pointing at the generated tsconfig
-      (cd generated/typescript && npx --yes tsx --tsconfig tsconfig.json "$SCRIPT_DIR/tests/test_typescript.ts") || exit_code=$?
+      # Copy test into generated dir so imports resolve relative to package
+      cp "$SCRIPT_DIR/tests/test_typescript.ts" generated/typescript/test.ts
+      (cd generated/typescript && npx --yes tsx test.ts) || exit_code=$?
       ;;
     go)
       # Set up test binary

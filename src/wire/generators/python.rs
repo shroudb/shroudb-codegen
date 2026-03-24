@@ -390,14 +390,14 @@ from typing import Any, Optional
             if f.optional && is_json {
                 writeln!(
                     out,
-                    "            {name} = json.loads(data[\"{name}\"]) if data.get(\"{name}\") is not None else None,",
+                    "            {name} = (json.loads(data[\"{name}\"]) if isinstance(data.get(\"{name}\"), str) else data.get(\"{name}\")),",
                     name = f.name
                 )
                 .unwrap();
             } else if is_json {
                 writeln!(
                     out,
-                    "            {name} = json.loads(data[\"{name}\"]),",
+                    "            {name} = json.loads(data[\"{name}\"]) if isinstance(data[\"{name}\"], str) else data[\"{name}\"],",
                     name = f.name
                 )
                 .unwrap();
