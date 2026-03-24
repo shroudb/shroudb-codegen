@@ -243,6 +243,8 @@ fn gen_client(spec: &ApiSpec, n: &Naming) -> GeneratedFile {
 export class {pascal}Client {{
   private readonly baseUrl: string;
   private readonly keyspace: string;
+  /** Request timeout in milliseconds. */
+  private readonly timeout: number;
   /** Current access token, set automatically after auth calls. */
   public accessToken: string | undefined;
   /** Current refresh token, set automatically after auth calls. */
@@ -252,11 +254,13 @@ export class {pascal}Client {{
    * Create a new {pascal} client.
    * @param baseUrl  Base URL of the {pascal} server (e.g. `http://localhost:{port}`).
    * @param keyspace Optional keyspace. Defaults to `"default"`.
+   * @param timeout  Request timeout in milliseconds. Defaults to `30000`.
    */
-  constructor(baseUrl: string, keyspace?: string) {{
+  constructor(baseUrl: string, keyspace?: string, timeout?: number) {{
     // Strip trailing slash for consistent URL building
     this.baseUrl = baseUrl.replace(/\/+$/, "");
     this.keyspace = keyspace ?? "default";
+    this.timeout = timeout ?? 30_000;
   }}
 "#,
         pascal = n.pascal,
@@ -283,18 +287,40 @@ export class {pascal}Client {{
     const url = `${{this.baseUrl}}${{path}}`;
     const headers: Record<string, string> = {{}};
 
-    if (opts?.auth) {{
+    if (opts?.auth !== undefined && opts.auth !== "") {{
       headers["Authorization"] = `Bearer ${{opts.auth}}`;
     }}
 
-    const init: RequestInit = {{ method, headers }};
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.timeout);
+
+    const init: RequestInit = {{ method, headers, signal: controller.signal }};
     if (opts?.body !== undefined) {{
       headers["Content-Type"] = "application/json";
       init.body = JSON.stringify(opts.body);
     }}
 
-    const res = await fetch(url, init);
+    let res: Response;
+    try {{
+      res = await fetch(url, init);
+    }} catch (err) {{
+      clearTimeout(timer);
+      if (err instanceof DOMException && err.name === "AbortError") {{
+        throw new {pascal}Error(
+          "TIMEOUT",
+          `Request timed out after ${{this.timeout}}ms`,
+          undefined,
+          undefined,
+        );
+      }}
+      throw err;
+    }} finally {{
+      clearTimeout(timer);
+    }}
+
     const text = await res.text();
+    const truncate = (s: string, max: number) =>
+      s.length > max ? s.slice(0, max) + "..." : s;
     let json: Record<string, unknown>;
     try {{
       json = JSON.parse(text) as Record<string, unknown>;
@@ -302,7 +328,7 @@ export class {pascal}Client {{
       throw new {pascal}Error(
         "PARSE_ERROR",
         `Server returned non-JSON response (HTTP ${{res.status}})`,
-        text,
+        truncate(text, 500),
         res.status,
       );
     }}

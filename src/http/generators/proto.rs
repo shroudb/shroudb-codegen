@@ -20,11 +20,7 @@ impl HttpGenerator for ProtoGenerator {
     }
 
     fn generate(&self, spec: &ApiSpec, n: &Naming) -> Vec<GeneratedFile> {
-        vec![
-            gen_proto(spec, n),
-            gen_buf_yaml(n),
-            gen_readme(spec, n),
-        ]
+        vec![gen_proto(spec, n), gen_buf_yaml(n), gen_readme(spec, n)]
     }
 }
 
@@ -67,12 +63,7 @@ fn gen_proto(spec: &ApiSpec, n: &Naming) -> GeneratedFile {
     writeln!(out).unwrap();
 
     // Service
-    writeln!(
-        out,
-        "// {} \u{2014} {}",
-        n.pascal, n.description
-    )
-    .unwrap();
+    writeln!(out, "// {} \u{2014} {}", n.pascal, n.description).unwrap();
     writeln!(out, "service {}Service {{", n.pascal).unwrap();
 
     for (ep_name, ep) in &spec.endpoints {
@@ -81,11 +72,7 @@ fn gen_proto(spec: &ApiSpec, n: &Naming) -> GeneratedFile {
         let resp_msg = format!("{rpc_name}Response");
 
         writeln!(out, "  // {}", ep.description).unwrap();
-        writeln!(
-            out,
-            "  rpc {rpc_name}({req_msg}) returns ({resp_msg}) {{"
-        )
-        .unwrap();
+        writeln!(out, "  rpc {rpc_name}({req_msg}) returns ({resp_msg}) {{").unwrap();
         writeln!(out, "    option (google.api.http) = {{").unwrap();
 
         let method_lower = ep.method.to_lowercase();
