@@ -217,6 +217,7 @@ class {pascal}Client:
         *,
         json: Optional[dict[str, Any]] = None,
         headers: Optional[dict[str, str]] = None,
+        expected_status: int = 200,
     ) -> dict[str, Any]:
         """Send an HTTP request and return the parsed JSON response.
 
@@ -233,7 +234,14 @@ class {pascal}Client:
             except ({pascal}Error, ):
                 raise
             except (ValueError, KeyError):
-                raise {pascal}Error("HTTP_ERROR", resp.text)
+                body_text = resp.text[:500]
+                raise {pascal}Error("HTTP_ERROR", body_text)
+        if resp.status_code != expected_status:
+            body_text = resp.text[:500]
+            raise {pascal}Error(
+                "UNEXPECTED_STATUS",
+                f"expected {{expected_status}}, got {{resp.status_code}}: {{body_text}}",
+            )
         if resp.status_code == 204 or not resp.content:
             return {{}}
         return resp.json()
@@ -247,7 +255,7 @@ class {pascal}Client:
     // Generate a method for each endpoint
     for (ep_name, ep) in &spec.endpoints {
         writeln!(out).unwrap();
-        gen_python_method(&mut out, ep_name, ep, n);
+        gen_python_method(&mut out, ep_name, ep);
     }
 
     GeneratedFile {
@@ -256,14 +264,27 @@ class {pascal}Client:
     }
 }
 
-fn gen_python_method(out: &mut String, ep_name: &str, ep: &EndpointDef, _n: &Naming) {
+fn gen_python_method(out: &mut String, ep_name: &str, ep: &EndpointDef) {
     let method_name = ep_name.to_snake_case();
     let has_keyspace = ep.has_keyspace();
     let required_body = ep.required_body();
     let optional_body = ep.optional_body();
+    let path_params = ep.path_params();
+
+    // Non-keyspace path params become method parameters
+    let extra_path_params: Vec<String> = path_params
+        .iter()
+        .filter(|p| *p != "keyspace")
+        .cloned()
+        .collect();
 
     // Build signature
     let mut sig_parts: Vec<String> = vec!["self".into()];
+
+    // Path params (other than keyspace) are positional
+    for param in &extra_path_params {
+        sig_parts.push(format!("{param}: str"));
+    }
 
     // Required body params are positional
     for (name, field) in &required_body {
@@ -306,14 +327,20 @@ fn gen_python_method(out: &mut String, ep_name: &str, ep: &EndpointDef, _n: &Nam
     // Build path
     if has_keyspace {
         writeln!(out, "        ks = self._resolve_keyspace(keyspace)").unwrap();
-        let path_template = ep.path.replace("{keyspace}", "{ks}");
+    }
+    if !path_params.is_empty() {
+        // Build an f-string that interpolates all path params
+        let mut path_template = ep.path.clone();
+        if has_keyspace {
+            path_template = path_template.replace("{keyspace}", "{ks}");
+        }
         writeln!(out, "        path = f\"{path_template}\"").unwrap();
     } else {
         writeln!(out, "        path = \"{}\"", ep.path).unwrap();
     }
 
-    // Build body for POST
-    if ep.method == "POST" && (!required_body.is_empty() || !optional_body.is_empty()) {
+    // Build body
+    if ep.has_body() && (!required_body.is_empty() || !optional_body.is_empty()) {
         write!(out, "        body: dict[str, Any] = {{").unwrap();
         let mut first = true;
         for (name, _) in &required_body {
@@ -335,60 +362,43 @@ fn gen_python_method(out: &mut String, ep_name: &str, ep: &EndpointDef, _n: &Nam
     let headers_arg = match ep.auth.as_str() {
         "access_token" => "headers=self._auth_headers()",
         "refresh_token" => "headers=self._refresh_headers()",
-        _ => "",
+        "none" => "",
+        other => panic!("unknown auth type '{other}' on endpoint {ep_name}"),
     };
 
     // Make request
-    if ep.method == "POST" && (!required_body.is_empty() || !optional_body.is_empty()) {
+    let has_body_fields = ep.has_body() && (!required_body.is_empty() || !optional_body.is_empty());
+    let expected_status = ep.success_status;
+    if has_body_fields {
         if headers_arg.is_empty() {
             writeln!(
                 out,
-                "        data = await self._request(\"{}\", path, json=body)",
+                "        data = await self._request(\"{}\", path, json=body, expected_status={expected_status})",
                 ep.method
             )
             .unwrap();
         } else {
             writeln!(
                 out,
-                "        data = await self._request(\"{}\", path, json=body, {headers_arg})",
+                "        data = await self._request(\"{}\", path, json=body, {headers_arg}, expected_status={expected_status})",
                 ep.method
             )
             .unwrap();
         }
-    } else if ep.method == "POST" {
-        // POST with no body
-        if headers_arg.is_empty() {
-            writeln!(
-                out,
-                "        data = await self._request(\"{}\", path)",
-                ep.method
-            )
-            .unwrap();
-        } else {
-            writeln!(
-                out,
-                "        data = await self._request(\"{}\", path, {headers_arg})",
-                ep.method
-            )
-            .unwrap();
-        }
+    } else if headers_arg.is_empty() {
+        writeln!(
+            out,
+            "        data = await self._request(\"{}\", path, expected_status={expected_status})",
+            ep.method
+        )
+        .unwrap();
     } else {
-        // GET
-        if headers_arg.is_empty() {
-            writeln!(
-                out,
-                "        data = await self._request(\"{}\", path)",
-                ep.method
-            )
-            .unwrap();
-        } else {
-            writeln!(
-                out,
-                "        data = await self._request(\"{}\", path, {headers_arg})",
-                ep.method
-            )
-            .unwrap();
-        }
+        writeln!(
+            out,
+            "        data = await self._request(\"{}\", path, {headers_arg}, expected_status={expected_status})",
+            ep.method
+        )
+        .unwrap();
     }
 
     // Store tokens if the response contains them
@@ -647,6 +657,34 @@ fn gen_readme(spec: &ApiSpec, n: &Naming) -> GeneratedFile {
         methods.push_str(&format!("- `client.{method}(...)` — {}\n", ep.description));
     }
 
+    // Build a spec-driven quick-start example from the first POST endpoint with a body
+    let mut example = String::new();
+    for (ep_name, ep) in &spec.endpoints {
+        if !ep.has_body() || ep.required_body().is_empty() {
+            continue;
+        }
+        let method = ep_name.to_snake_case();
+        let mut args: Vec<String> = Vec::new();
+        for (name, _field) in ep.required_body() {
+            let example_val = match name {
+                "user_id" => "\"alice\"",
+                "password" => "\"s3cret\"",
+                _ => "\"...\"",
+            };
+            args.push(example_val.to_string());
+        }
+        writeln!(
+            example,
+            "        result = await client.{method}({})",
+            args.join(", ")
+        )
+        .unwrap();
+        if !ep.response.is_empty() {
+            writeln!(example, "        print(result)").unwrap();
+        }
+        break;
+    }
+
     GeneratedFile {
         path: "README.md".into(),
         content: format!(
@@ -668,18 +706,7 @@ from {snake} import {pascal}Client
 
 async def main():
     async with {pascal}Client("http://localhost:{port}") as client:
-        # Sign up
-        result = await client.signup("alice", "s3cret")
-        print(result.access_token)
-
-        # Check session
-        session = await client.session()
-        print(session.claims)
-
-        # Refresh tokens
-        refreshed = await client.refresh()
-        print(refreshed.access_token)
-
+{example}
 asyncio.run(main())
 ```
 
@@ -695,8 +722,9 @@ client = {pascal}Client(
 
 ## Token Management
 
-After `signup()` or `login()`, the client automatically stores the access and refresh
-tokens. Subsequent calls to authenticated endpoints use these tokens automatically.
+After calling an endpoint that returns tokens, the client automatically stores
+the access and refresh tokens. Subsequent calls to authenticated endpoints use
+these tokens automatically.
 
 You can also manage tokens manually:
 
@@ -713,12 +741,12 @@ client.refresh_token = "rt_..."
 
 ```python
 async with {pascal}Client("http://localhost:{port}") as client:
-    result = await client.login("alice", "s3cret")
+    ...
 ```
 
 ## Auto-generated
 
-This client was generated by `shroudb-auth-codegen` from `protocol.toml`.
+This client was generated by `shroudb-codegen` from the `{raw}` protocol spec.
 "#,
             pascal = n.pascal,
             kebab = n.kebab,
@@ -726,6 +754,8 @@ This client was generated by `shroudb-auth-codegen` from `protocol.toml`.
             port = n.default_port,
             description = n.description,
             methods = methods,
+            example = example,
+            raw = n.raw,
         ),
     }
 }

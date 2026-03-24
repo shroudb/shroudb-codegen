@@ -210,8 +210,8 @@ fn gen_client(spec: &ApiSpec, n: &Naming) -> GeneratedFile {
             writeln!(s).unwrap();
         }
 
-        // Build body hash for POST
-        if ep.method == "POST" && !ep.body.is_empty() {
+        // Build body hash for requests with a body
+        if ep.has_body() && !ep.body.is_empty() {
             writeln!(s, "      body = {{}}").unwrap();
             for (name, _field) in ep.required_body() {
                 writeln!(s, "      body[\"{}\"] = {}", name, name).unwrap();
@@ -231,11 +231,15 @@ fn gen_client(spec: &ApiSpec, n: &Naming) -> GeneratedFile {
         let auth_arg = match ep.auth.as_str() {
             "access_token" => ", auth: :access_token",
             "refresh_token" => ", auth: :refresh_token",
-            _ => "",
+            "none" => "",
+            other => panic!(
+                "unknown auth type '{other}' on endpoint {}",
+                ep_name.to_snake_case()
+            ),
         };
 
         // Call request helper
-        if ep.method == "POST" && !ep.body.is_empty() {
+        if ep.has_body() && !ep.body.is_empty() {
             writeln!(
                 s,
                 "      result = request(\"{}\", \"{}\", body: body{})",
@@ -251,12 +255,20 @@ fn gen_client(spec: &ApiSpec, n: &Naming) -> GeneratedFile {
             .unwrap();
         }
 
-        // Auto-store tokens
+        // Auto-store tokens (guarded with .key? check)
         if stores_access {
-            writeln!(s, "      @access_token = result[\"access_token\"]").unwrap();
+            writeln!(
+                s,
+                "      @access_token = result[\"access_token\"] if result.key?(\"access_token\")"
+            )
+            .unwrap();
         }
         if stores_refresh {
-            writeln!(s, "      @refresh_token = result[\"refresh_token\"]").unwrap();
+            writeln!(
+                s,
+                "      @refresh_token = result[\"refresh_token\"] if result.key?(\"refresh_token\")"
+            )
+            .unwrap();
         }
 
         // Return typed response
@@ -273,16 +285,40 @@ fn gen_client(spec: &ApiSpec, n: &Naming) -> GeneratedFile {
     writeln!(s).unwrap();
     writeln!(s, "    private").unwrap();
     writeln!(s).unwrap();
+    writeln!(s, "    def connection").unwrap();
+    writeln!(s, "      @connection ||= begin").unwrap();
+    writeln!(s, "        uri = URI.parse(@base_url)").unwrap();
+    writeln!(s, "        http = Net::HTTP.new(uri.host, uri.port)").unwrap();
+    writeln!(s, "        http.use_ssl = (uri.scheme == \"https\")").unwrap();
+    writeln!(s, "        http.start").unwrap();
+    writeln!(s, "        http").unwrap();
+    writeln!(s, "      end").unwrap();
+    writeln!(s, "    end").unwrap();
+    writeln!(s).unwrap();
     writeln!(s, "    def request(method, path, body: nil, auth: nil)").unwrap();
     writeln!(s, "      uri = URI.parse(\"#{{@base_url}}#{{path}}\")").unwrap();
     writeln!(s).unwrap();
-    writeln!(s, "      http = Net::HTTP.new(uri.host, uri.port)").unwrap();
-    writeln!(s, "      http.use_ssl = (uri.scheme == \"https\")").unwrap();
-    writeln!(s).unwrap();
     writeln!(s, "      req = case method").unwrap();
-    writeln!(s, "            when \"GET\"  then Net::HTTP::Get.new(uri)").unwrap();
-    writeln!(s, "            when \"POST\" then Net::HTTP::Post.new(uri)").unwrap();
-    writeln!(s, "            when \"PUT\"  then Net::HTTP::Put.new(uri)").unwrap();
+    writeln!(
+        s,
+        "            when \"GET\"    then Net::HTTP::Get.new(uri)"
+    )
+    .unwrap();
+    writeln!(
+        s,
+        "            when \"POST\"   then Net::HTTP::Post.new(uri)"
+    )
+    .unwrap();
+    writeln!(
+        s,
+        "            when \"PUT\"    then Net::HTTP::Put.new(uri)"
+    )
+    .unwrap();
+    writeln!(
+        s,
+        "            when \"PATCH\"  then Net::HTTP::Patch.new(uri)"
+    )
+    .unwrap();
     writeln!(
         s,
         "            when \"DELETE\" then Net::HTTP::Delete.new(uri)"
@@ -325,8 +361,17 @@ fn gen_client(spec: &ApiSpec, n: &Naming) -> GeneratedFile {
     writeln!(s).unwrap();
     writeln!(s, "      req.body = JSON.generate(body) if body").unwrap();
     writeln!(s).unwrap();
-    writeln!(s, "      response = http.request(req)").unwrap();
-    writeln!(s, "      data = JSON.parse(response.body) rescue {{}}").unwrap();
+    writeln!(s, "      response = connection.request(req)").unwrap();
+    writeln!(s).unwrap();
+    writeln!(s, "      begin").unwrap();
+    writeln!(
+        s,
+        "        data = response.body ? JSON.parse(response.body) : {{}}"
+    )
+    .unwrap();
+    writeln!(s, "      rescue JSON::ParserError").unwrap();
+    writeln!(s, "        raise Error.new(\"PARSE_ERROR\", \"invalid JSON in response: #{{response.body&.slice(0, 500)}}\")").unwrap();
+    writeln!(s, "      end").unwrap();
     writeln!(s).unwrap();
     writeln!(s, "      unless response.is_a?(Net::HTTPSuccess)").unwrap();
     writeln!(s, "        code = data[\"error\"] || \"UNKNOWN\"").unwrap();

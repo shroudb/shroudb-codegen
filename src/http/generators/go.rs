@@ -62,23 +62,40 @@ fn go_json_tag(field_name: &str, optional: bool) -> String {
     }
 }
 
-fn auth_const(auth: &str) -> &'static str {
+fn auth_const(ep_path: &str, auth: &str) -> &'static str {
     match auth {
         "access_token" => "authAccess",
         "refresh_token" => "authRefresh",
-        _ => "authNone",
+        "none" => "authNone",
+        other => panic!("unknown auth type '{other}' on endpoint {ep_path}"),
     }
 }
 
-/// Build the Go format path expression from a spec path like "/auth/{keyspace}/signup".
-/// Returns (format_string, args) — e.g. ("/auth/%s/signup", vec!["c.Keyspace"]).
-fn go_path_expr(ep: &EndpointDef) -> (String, Vec<&'static str>) {
-    if ep.has_keyspace() {
-        let fmt_path = ep.path.replace("{keyspace}", "%s");
-        (fmt_path, vec!["c.Keyspace"])
-    } else {
-        (ep.path.clone(), vec![])
+/// Build the Go format path expression from a spec path.
+/// Returns (format_string, sprintf_args, extra_param_names).
+/// `{keyspace}` maps to `c.Keyspace`; other `{param}` become method parameters.
+fn go_path_expr(ep: &EndpointDef) -> (String, Vec<String>, Vec<String>) {
+    let path_params = ep.path_params();
+    if path_params.is_empty() {
+        return (ep.path.clone(), vec![], vec![]);
     }
+
+    let mut fmt_path = ep.path.clone();
+    let mut args = Vec::new();
+    let mut extra_params = Vec::new();
+
+    for param in &path_params {
+        fmt_path = fmt_path.replace(&format!("{{{param}}}"), "%s");
+        if param == "keyspace" {
+            args.push("c.Keyspace".to_string());
+        } else {
+            let go_name = to_go_param_name(param);
+            args.push(go_name.clone());
+            extra_params.push(go_name);
+        }
+    }
+
+    (fmt_path, args, extra_params)
 }
 
 // ─── client.go ───────────────────────────────────────────────────────────────
@@ -165,7 +182,7 @@ func NewClient(baseURL string, opts ...ClientOption) *Client {{
 }}
 
 // do performs an HTTP request and decodes the JSON response.
-func (c *Client) do(ctx context.Context, method, path string, body any, result any, authMode int) error {{
+func (c *Client) do(ctx context.Context, method, path string, body any, result any, authMode int, expectedStatus int) error {{
 	url := c.BaseURL + path
 
 	var bodyReader io.Reader
@@ -209,7 +226,7 @@ func (c *Client) do(ctx context.Context, method, path string, body any, result a
 		return fmt.Errorf("{snake}: read response: %w", err)
 	}}
 
-	if resp.StatusCode >= 400 {{
+	if resp.StatusCode != expectedStatus {{
 		var apiErr {pascal}Error
 		if json.Unmarshal(respBody, &apiErr) == nil && apiErr.Code != "" {{
 			return &apiErr
@@ -258,6 +275,14 @@ fn gen_go_method(out: &mut String, ep_name: &str, ep: &EndpointDef, _n: &Naming)
     // Build method signature parts
     let mut params = vec!["ctx context.Context".to_string()];
 
+    // Path parameters (other than keyspace, which lives on the Client)
+    for param in ep.path_params() {
+        if param != "keyspace" {
+            let go_name = to_go_param_name(&param);
+            params.push(format!("{go_name} string"));
+        }
+    }
+
     // Required body fields become positional arguments
     for (name, _field) in ep.required_body() {
         let go_name = to_go_param_name(name);
@@ -287,8 +312,8 @@ fn gen_go_method(out: &mut String, ep_name: &str, ep: &EndpointDef, _n: &Naming)
     )
     .unwrap();
 
-    // Build body map for POST requests
-    if ep.method == "POST" && (has_required_body || has_optional_body) {
+    // Build body map for requests with a body
+    if ep.has_body() && (has_required_body || has_optional_body) {
         writeln!(out, "\tbody := map[string]any{{").unwrap();
         for (name, _field) in ep.required_body() {
             let go_name = to_go_param_name(name);
@@ -326,26 +351,23 @@ fn gen_go_method(out: &mut String, ep_name: &str, ep: &EndpointDef, _n: &Naming)
     }
 
     // Build path expression
-    let (fmt_path, fmt_args) = go_path_expr(ep);
+    let (fmt_path, fmt_args, _extra_params) = go_path_expr(ep);
     let path_expr = if fmt_args.is_empty() {
         format!("\"{}\"", fmt_path)
     } else {
         format!("fmt.Sprintf(\"{}\", {})", fmt_path, fmt_args.join(", "))
     };
 
-    let body_arg = if ep.method == "POST" && (has_required_body || has_optional_body) {
-        "body"
-    } else {
-        "nil"
-    };
+    let body_arg = if ep.has_body() { "body" } else { "nil" };
 
-    let auth = auth_const(&ep.auth);
+    let auth = auth_const(&ep.path, &ep.auth);
+    let expected_status = ep.success_status;
 
     if has_response {
         writeln!(out, "\tresult := &{response_type}{{}}").unwrap();
         writeln!(
             out,
-            "\terr := c.do(ctx, \"{}\", {path_expr}, {body_arg}, result, {auth})",
+            "\terr := c.do(ctx, \"{}\", {path_expr}, {body_arg}, result, {auth}, {expected_status})",
             ep.method
         )
         .unwrap();
@@ -366,7 +388,7 @@ fn gen_go_method(out: &mut String, ep_name: &str, ep: &EndpointDef, _n: &Naming)
     } else {
         writeln!(
             out,
-            "\treturn c.do(ctx, \"{}\", {path_expr}, {body_arg}, nil, {auth})",
+            "\treturn c.do(ctx, \"{}\", {path_expr}, {body_arg}, nil, {auth}, {expected_status})",
             ep.method
         )
         .unwrap();
@@ -644,11 +666,12 @@ if {snake}.IsUnauthorized(err) {{
 
 ## Auto-generated
 
-This client was generated by `shroudb-auth-codegen` from `protocol.toml`.
+This client was generated by `shroudb-codegen` from the `{raw}` protocol spec.
 "#,
             pascal = n.pascal,
             kebab = n.kebab,
             snake = n.snake,
+            raw = n.raw,
             go_module = n.go_module,
             port = n.default_port,
             description = n.description,
