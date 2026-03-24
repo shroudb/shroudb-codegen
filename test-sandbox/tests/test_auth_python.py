@@ -33,7 +33,7 @@ async def main():
         check("health", h.status in ("healthy", "ok", "OK"))
 
         # 2. Signup
-        signup = await client.signup(user_id="testuser1", password="testpass123")
+        signup = await client.signup(user_id="testuser_py", password="testpass123")
         check("signup", signup.access_token is not None and signup.refresh_token is not None)
         access = signup.access_token
         refresh = signup.refresh_token
@@ -41,10 +41,10 @@ async def main():
         # 3. Session (verify access token)
         client._access_token = access
         session = await client.session()
-        check("session", session.user_id == "testuser1")
+        check("session", session.user_id == "testuser_py")
 
         # 4. Login
-        login = await client.login(user_id="testuser1", password="testpass123")
+        login = await client.login(user_id="testuser_py", password="testpass123")
         check("login", login.access_token is not None)
 
         # 5. Refresh
@@ -60,11 +60,11 @@ async def main():
         check("change_password", True)
 
         # 7. Login with new password
-        login2 = await client.login(user_id="testuser1", password="newpass456")
+        login2 = await client.login(user_id="testuser_py", password="newpass456")
         check("login_new_pass", login2.access_token is not None)
 
         # 8. Forgot password
-        fp = await client.forgot_password(user_id="testuser1")
+        fp = await client.forgot_password(user_id="testuser_py")
         check("forgot_password", fp.reset_token is not None)
 
         # 9. Reset password
@@ -72,7 +72,7 @@ async def main():
         check("reset_password", True)
 
         # 10. Login after reset
-        login3 = await client.login(user_id="testuser1", password="resetpass789")
+        login3 = await client.login(user_id="testuser_py", password="resetpass789")
         check("login_after_reset", login3.access_token is not None)
 
         # 11. Logout
@@ -87,14 +87,14 @@ async def main():
 
         # 13. Error: wrong password
         try:
-            await client.login(user_id="testuser1", password="wrongpass")
+            await client.login(user_id="testuser_py", password="wrongpass")
             check("error_unauthorized", False)
         except ShroudbAuthError as e:
             check("error_unauthorized", "DENIED" in e.code or "UNAUTHORIZED" in e.code)
 
         # 14. Error: duplicate signup
         try:
-            await client.signup(user_id="testuser1", password="anotherpass")
+            await client.signup(user_id="testuser_py", password="anotherpass")
             check("error_conflict", False)
         except ShroudbAuthError as e:
             check("error_conflict", "STATE_ERROR" in e.code or "CONFLICT" in e.code)

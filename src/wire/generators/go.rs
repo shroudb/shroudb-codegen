@@ -522,12 +522,21 @@ package {snake}
                     .unwrap();
                 }
                 _ => {
-                    writeln!(
-                        out,
-                        "\tif v, ok := m[\"{}\"].({go_t}); ok {{ r.{field_name} = v }}",
-                        f.name
-                    )
-                    .unwrap();
+                    if f.optional {
+                        writeln!(
+                            out,
+                            "\tif v, ok := m[\"{}\"].({go_t}); ok {{ r.{field_name} = &v }}",
+                            f.name
+                        )
+                        .unwrap();
+                    } else {
+                        writeln!(
+                            out,
+                            "\tif v, ok := m[\"{}\"].({go_t}); ok {{ r.{field_name} = v }}",
+                            f.name
+                        )
+                        .unwrap();
+                    }
                 }
             }
         }
@@ -563,6 +572,16 @@ fn gen_client(spec: &ProtocolSpec, n: &Naming) -> GeneratedFile {
         .map(|s| s.trim_end_matches("://"))
         .unwrap_or(&n.snake);
     let scheme_tls = format!("{scheme}+tls");
+    let needs_json_in_client = spec.commands.values().any(|cmd| {
+        cmd.named_params()
+            .iter()
+            .any(|p| p.param_type == "json_value")
+    });
+    let json_import = if needs_json_in_client {
+        "\"encoding/json\"\n\t"
+    } else {
+        ""
+    };
     let mut out = format!(
         r#"// Package {snake} provides a client for the {pascal} {description}.
 //
@@ -577,8 +596,7 @@ fn gen_client(spec: &ProtocolSpec, n: &Naming) -> GeneratedFile {
 package {snake}
 
 import (
-	"encoding/json"
-	"fmt"
+	{json_import}"fmt"
 	"net/url"
 	"strconv"
 	"strings"
@@ -825,6 +843,7 @@ func parseURI(uri string) (*uriConfig, error) {{
         scheme_tls = scheme_tls,
         port = n.default_port,
         description = n.description,
+        json_import = json_import,
     );
 
     // Generate methods

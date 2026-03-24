@@ -271,13 +271,15 @@ fn gen_client(spec: &ApiSpec, n: &Naming) -> GeneratedFile {
             .unwrap();
         }
 
-        // Return typed response
+        // Return typed response, filtering to known fields
+        let known_fields: Vec<String> = ep.response.keys().map(|k| format!(":{k}")).collect();
         writeln!(
             s,
-            "      {}::{}(**result.transform_keys(&:to_sym))",
-            n.pascal, resp_class
+            "      fields = result.transform_keys(&:to_sym).slice({})",
+            known_fields.join(", ")
         )
         .unwrap();
+        writeln!(s, "      {}::{}.new(**fields)", n.pascal, resp_class).unwrap();
         writeln!(s, "    end").unwrap();
     }
 

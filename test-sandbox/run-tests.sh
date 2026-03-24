@@ -261,15 +261,19 @@ fi
 # ── Wire protocol: shroudb-transit ──────────────────────────────────────────
 
 if [[ -n "$TRANSIT_SPEC" ]]; then
-  run_lang_test transit python    generated/transit/python     "$SCRIPT_DIR/tests/test_transit_python.py"
-  # TODO: transit tests for typescript, go, ruby
+  run_lang_test transit python     generated/transit/python     "$SCRIPT_DIR/tests/test_transit_python.py"
+  run_lang_test transit typescript generated/transit/typescript "$SCRIPT_DIR/tests/test_transit_typescript.ts"
+  run_lang_test transit go         generated/transit/go         "$SCRIPT_DIR/tests/test_transit_go.go"
+  run_lang_test transit ruby       generated/transit/ruby       "$SCRIPT_DIR/tests/test_transit_ruby.rb"
 fi
 
 # ── HTTP API: shroudb-auth ──────────────────────────────────────────────────
 
 if [[ -n "$AUTH_SPEC" ]]; then
-  run_lang_test auth python       generated/auth/python        "$SCRIPT_DIR/tests/test_auth_python.py"
-  # TODO: auth tests for typescript, go, ruby
+  run_lang_test auth python        generated/auth/python        "$SCRIPT_DIR/tests/test_auth_python.py"
+  run_lang_test auth typescript    generated/auth/typescript    "$SCRIPT_DIR/tests/test_auth_typescript.ts"
+  run_lang_test auth go            generated/auth/go            "$SCRIPT_DIR/tests/test_auth_go.go"
+  run_lang_test auth ruby          generated/auth/ruby          "$SCRIPT_DIR/tests/test_auth_ruby.rb"
 fi
 
 # ── Results ─────────────────────────────────────────────────────────────────
