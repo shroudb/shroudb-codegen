@@ -10,7 +10,7 @@
 
 use super::super::spec::{ApiSpec, EndpointDef};
 use crate::generator::{GeneratedFile, Naming};
-use heck::ToSnakeCase;
+use heck::{ToPascalCase, ToSnakeCase};
 use std::fmt::Write;
 
 use super::HttpGenerator;
@@ -72,21 +72,8 @@ fn code_to_class(code: &str) -> String {
     name
 }
 
-/// Convert an endpoint name like "change_password" to PascalCase like "ChangePassword".
 fn to_pascal(s: &str) -> String {
-    s.split('_')
-        .map(|part| {
-            let mut chars = part.chars();
-            match chars.next() {
-                None => String::new(),
-                Some(first) => {
-                    let mut s = first.to_uppercase().to_string();
-                    s.extend(chars);
-                    s
-                }
-            }
-        })
-        .collect()
+    s.to_pascal_case()
 }
 
 /// Whether an endpoint returns tokens that should be stored on the client.

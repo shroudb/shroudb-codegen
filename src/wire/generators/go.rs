@@ -39,24 +39,33 @@ impl Generator for GoGenerator {
 
 fn go_type(spec: &ProtocolSpec, type_name: &str, optional: bool) -> String {
     let base = match spec.types.get(type_name) {
-        Some(_t) => match type_name {
-            "keyspace" | "credential_id" | "token" => "string",
-            "integer" | "unix_timestamp" => "int64",
-            "boolean_flag" => "bool",
-            "json_value" => "map[string]any",
-            _ => "any",
-        },
+        Some(t) => t
+            .go_type
+            .as_deref()
+            .unwrap_or_else(|| go_type_from_rust(&t.rust_type)),
         None => "any",
     };
-    if optional && base != "bool" {
+    if optional {
         match base {
-            "string" => "string".into(),
-            "int64" => "*int64".into(),
-            "map[string]any" => "map[string]any".into(),
+            "string" | "map[string]any" | "[]string" | "[]byte" => base.into(),
             _ => format!("*{base}"),
         }
     } else {
         base.into()
+    }
+}
+
+fn go_type_from_rust(rust_type: &str) -> &str {
+    match rust_type {
+        "String" | "&str" => "string",
+        "i64" | "u64" => "int64",
+        "i32" | "u32" => "int32",
+        "bool" => "bool",
+        "f64" => "float64",
+        "serde_json::Value" | "HashMap<String, serde_json::Value>" => "map[string]any",
+        "Vec<String>" => "[]string",
+        "Vec<u8>" => "[]byte",
+        _ => "any",
     }
 }
 
