@@ -10,9 +10,9 @@
 //! - `lib/{name}/types.rb`       — response structs
 //! - `{name}.gemspec`            — gem specification
 
-use crate::generator::{GeneratedFile, Naming};
-use super::Generator;
 use super::super::spec::{CommandDef, ProtocolSpec};
+use super::Generator;
+use crate::generator::{GeneratedFile, Naming};
 use heck::ToSnakeCase;
 use std::fmt::Write;
 
@@ -251,15 +251,29 @@ module {pascal}
       @idle = []
       @open = 0
       @mutex = Mutex.new
+      @cond = ConditionVariable.new
+      @closed = false
     end
 
     def get
       @mutex.synchronize do
-        if (conn = @idle.pop)
-          return conn
-        end
+        loop do
+          raise "pool is closed" if @closed
 
-        @open += 1
+          # Reuse an idle connection if available
+          if (conn = @idle.pop)
+            return conn
+          end
+
+          # Create a new connection if under the limit (or unlimited)
+          if @max_open == 0 || @open < @max_open
+            @open += 1
+            break
+          end
+
+          # At limit — wait for a connection to be returned
+          @cond.wait(@mutex)
+        end
       end
 
       conn = Connection.open(@host, @port, tls: @tls)
@@ -278,14 +292,17 @@ module {pascal}
           conn.close
           @open -= 1
         end
+        @cond.signal
       end
     end
 
     def close
       @mutex.synchronize do
+        @closed = true
         @idle.each(&:close)
         @idle.clear
         @open = 0
+        @cond.broadcast
       end
     end
   end
@@ -646,7 +663,10 @@ fn gen_ruby_method(out: &mut String, spec: &ProtocolSpec, cmd_name: &str, cmd: &
 
     // Named
     for p in &named {
-        let key = p.key.as_deref().unwrap();
+        let key = p
+            .key
+            .as_deref()
+            .expect("named_params() should only return params with a key");
         if p.param_type == "boolean_flag" {
             writeln!(out, "      args.push(\"{key}\") if {}", p.name).unwrap();
         } else if p.param_type == "json_value" {
@@ -754,7 +774,12 @@ end
     }
 }
 
-fn gen_ruby_pipeline_method(out: &mut String, spec: &ProtocolSpec, cmd_name: &str, cmd: &CommandDef) {
+fn gen_ruby_pipeline_method(
+    out: &mut String,
+    spec: &ProtocolSpec,
+    cmd_name: &str,
+    cmd: &CommandDef,
+) {
     if cmd.streaming {
         writeln!(
             out,
@@ -789,7 +814,12 @@ fn gen_ruby_pipeline_method(out: &mut String, spec: &ProtocolSpec, cmd_name: &st
     }
 
     // Doc comment
-    writeln!(out, "    # Queue a {} command.", cmd.description.to_lowercase()).unwrap();
+    writeln!(
+        out,
+        "    # Queue a {} command.",
+        cmd.description.to_lowercase()
+    )
+    .unwrap();
     for p in &positional {
         let rb_type = ruby_type(spec, &p.param_type);
         writeln!(out, "    # @param {} [{rb_type}] {}", p.name, p.description).unwrap();
@@ -826,7 +856,10 @@ fn gen_ruby_pipeline_method(out: &mut String, spec: &ProtocolSpec, cmd_name: &st
 
     // Named
     for p in &named {
-        let key = p.key.as_deref().unwrap();
+        let key = p
+            .key
+            .as_deref()
+            .expect("named_params() should only return params with a key");
         if p.param_type == "boolean_flag" {
             writeln!(out, "      args.push(\"{key}\") if {}", p.name).unwrap();
         } else if p.param_type == "json_value" {
