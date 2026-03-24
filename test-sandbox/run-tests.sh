@@ -236,10 +236,8 @@ run_test() {
       (cd generated/python && python3 "$SCRIPT_DIR/tests/test_python.py") || exit_code=$?
       ;;
     typescript)
-      # Install tsx + typescript locally in the generated package
-      (cd generated/typescript && npm install --save-dev tsx typescript 2>&1 | tail -1)
-      # Use node --import tsx/esm for top-level await support
-      (cd generated/typescript && node --import tsx/esm "$SCRIPT_DIR/tests/test_typescript.ts") || exit_code=$?
+      # Run with npx tsx --tsconfig pointing at the generated tsconfig
+      (cd generated/typescript && npx --yes tsx --tsconfig tsconfig.json "$SCRIPT_DIR/tests/test_typescript.ts") || exit_code=$?
       ;;
     go)
       # Set up test binary

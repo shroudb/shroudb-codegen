@@ -1244,6 +1244,7 @@ fn gen_package_json(spec: &ProtocolSpec, n: &Naming) -> GeneratedFile {
   "name": "{npm_name}",
   "version": "{version}",
   "description": "TypeScript client for the {pascal} {description}",
+  "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {{

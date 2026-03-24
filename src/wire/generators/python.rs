@@ -390,7 +390,7 @@ from typing import Any, Optional
             if f.optional && is_json {
                 writeln!(
                     out,
-                    "            {name} = json.loads(data[\"{name}\"]) if \"{name}\" in data else None,",
+                    "            {name} = json.loads(data[\"{name}\"]) if data.get(\"{name}\") is not None else None,",
                     name = f.name
                 )
                 .unwrap();
@@ -404,7 +404,7 @@ from typing import Any, Optional
             } else if f.optional && is_int {
                 writeln!(
                     out,
-                    "            {name} = int(data[\"{name}\"]) if \"{name}\" in data else None,",
+                    "            {name} = int(data[\"{name}\"]) if data.get(\"{name}\") is not None else None,",
                     name = f.name
                 )
                 .unwrap();
