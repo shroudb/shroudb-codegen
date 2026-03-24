@@ -8,8 +8,8 @@
 //! - `README.md`   — quick usage docs
 
 use super::super::spec::{ApiSpec, EndpointDef};
-use heck::ToUpperCamelCase;
 use crate::generator::{GeneratedFile, Naming};
+use heck::ToUpperCamelCase;
 use std::fmt::Write;
 
 use super::HttpGenerator;
@@ -330,11 +330,7 @@ fn gen_go_method(out: &mut String, ep_name: &str, ep: &EndpointDef, _n: &Naming)
     let path_expr = if fmt_args.is_empty() {
         format!("\"{}\"", fmt_path)
     } else {
-        format!(
-            "fmt.Sprintf(\"{}\", {})",
-            fmt_path,
-            fmt_args.join(", ")
-        )
+        format!("fmt.Sprintf(\"{}\", {})", fmt_path, fmt_args.join(", "))
     };
 
     let body_arg = if ep.method == "POST" && (has_required_body || has_optional_body) {
@@ -514,11 +510,7 @@ package {snake}
                 let field_name = name.to_upper_camel_case();
                 let field_type = go_type(&field.field_type);
                 let tag = go_json_tag(name, true);
-                writeln!(
-                    out,
-                    "\t// {}", field.description
-                )
-                .unwrap();
+                writeln!(out, "\t// {}", field.description).unwrap();
                 writeln!(out, "\t{field_name} {field_type} {tag}").unwrap();
             }
             writeln!(out, "}}\n").unwrap();

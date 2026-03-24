@@ -9,8 +9,8 @@
 //! - `README.md`      — quick usage docs
 
 use super::super::spec::{ApiSpec, EndpointDef};
-use heck::ToSnakeCase;
 use crate::generator::{GeneratedFile, Naming};
+use heck::ToSnakeCase;
 use std::fmt::Write;
 
 use super::HttpGenerator;
@@ -341,8 +341,12 @@ fn gen_python_method(out: &mut String, ep_name: &str, ep: &EndpointDef, _n: &Nam
     // Make request
     if ep.method == "POST" && (!required_body.is_empty() || !optional_body.is_empty()) {
         if headers_arg.is_empty() {
-            writeln!(out, "        data = await self._request(\"{}\", path, json=body)", ep.method)
-                .unwrap();
+            writeln!(
+                out,
+                "        data = await self._request(\"{}\", path, json=body)",
+                ep.method
+            )
+            .unwrap();
         } else {
             writeln!(
                 out,
@@ -354,7 +358,12 @@ fn gen_python_method(out: &mut String, ep_name: &str, ep: &EndpointDef, _n: &Nam
     } else if ep.method == "POST" {
         // POST with no body
         if headers_arg.is_empty() {
-            writeln!(out, "        data = await self._request(\"{}\", path)", ep.method).unwrap();
+            writeln!(
+                out,
+                "        data = await self._request(\"{}\", path)",
+                ep.method
+            )
+            .unwrap();
         } else {
             writeln!(
                 out,
@@ -366,7 +375,12 @@ fn gen_python_method(out: &mut String, ep_name: &str, ep: &EndpointDef, _n: &Nam
     } else {
         // GET
         if headers_arg.is_empty() {
-            writeln!(out, "        data = await self._request(\"{}\", path)", ep.method).unwrap();
+            writeln!(
+                out,
+                "        data = await self._request(\"{}\", path)",
+                ep.method
+            )
+            .unwrap();
         } else {
             writeln!(
                 out,
@@ -488,7 +502,12 @@ from typing import Any, Optional
         // Required fields first, then optional
         for (fname, fdef) in ep.required_response() {
             let py_type = python_type(&fdef.field_type);
-            writeln!(out, "    {fname}: {py_type} = {}", py_default(&fdef.field_type)).unwrap();
+            writeln!(
+                out,
+                "    {fname}: {py_type} = {}",
+                py_default(&fdef.field_type)
+            )
+            .unwrap();
         }
         for (fname, fdef) in ep.optional_response() {
             let py_type = python_type(&fdef.field_type);

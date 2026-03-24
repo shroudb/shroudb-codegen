@@ -73,7 +73,28 @@ impl ApiSpec {
 impl EndpointDef {
     /// Whether this endpoint has `{keyspace}` in the path.
     pub fn has_keyspace(&self) -> bool {
-        self.keyspace_in_path.unwrap_or_else(|| self.path.contains("{keyspace}"))
+        self.keyspace_in_path
+            .unwrap_or_else(|| self.path.contains("{keyspace}"))
+    }
+
+    /// Extract all `{param}` placeholders from the path.
+    pub fn path_params(&self) -> Vec<String> {
+        let mut params = Vec::new();
+        let mut rest = self.path.as_str();
+        while let Some(start) = rest.find('{') {
+            if let Some(end) = rest[start..].find('}') {
+                params.push(rest[start + 1..start + end].to_string());
+                rest = &rest[start + end + 1..];
+            } else {
+                break;
+            }
+        }
+        params
+    }
+
+    /// Whether the HTTP method typically carries a request body.
+    pub fn has_body(&self) -> bool {
+        matches!(self.method.as_str(), "POST" | "PUT" | "PATCH" | "DELETE") && !self.body.is_empty()
     }
 
     /// Required body fields, sorted by name.
