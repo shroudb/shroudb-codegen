@@ -1,0 +1,13 @@
+# Auth test server configuration (embedded mode).
+
+[server]
+bind = "127.0.0.1:{{PORT}}"
+
+[storage]
+data_dir = "{{DATA_DIR}}"
+
+[keyspaces.default]
+algorithm = "ES256"
+password_algorithm = "argon2id"
+max_failed_attempts = 5
+lockout_duration = "15m"

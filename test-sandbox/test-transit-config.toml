@@ -1,0 +1,16 @@
+# Transit test server configuration.
+
+[server]
+bind = "127.0.0.1:{{PORT}}"
+
+[storage]
+data_dir = "{{DATA_DIR}}"
+
+[keyrings.test-aes]
+algorithm = "aes-256-gcm"
+
+[keyrings.test-chacha]
+algorithm = "chacha20-poly1305"
+
+[keyrings.test-ed25519]
+algorithm = "ed25519"
