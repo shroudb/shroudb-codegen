@@ -5,9 +5,9 @@
 //! - `buf.yaml`                — buf.build module configuration
 //! - `README.md`               — usage instructions
 
-use crate::generator::{GeneratedFile, Naming};
-use super::Generator;
 use super::super::spec::ProtocolSpec;
+use super::Generator;
+use crate::generator::{GeneratedFile, Naming};
 use heck::{ToSnakeCase, ToUpperCamelCase};
 use std::fmt::Write;
 
@@ -28,21 +28,42 @@ impl Generator for ProtoGenerator {
     }
 }
 
-/// Map a wire‐spec type name to a proto3 type.
-fn proto_type(type_name: &str) -> &'static str {
-    match type_name {
-        "keyspace" | "credential_id" | "token" => "string",
-        "integer" | "unix_timestamp" => "int64",
-        "boolean_flag" => "bool",
-        "json_value" => "google.protobuf.Struct",
-        _ => "string",
+/// Map a wire-spec type name to a proto3 type, using the spec's TypeDef when available.
+fn proto_type(spec: &ProtocolSpec, type_name: &str) -> &'static str {
+    if let Some(t) = spec.types.get(type_name) {
+        match t.rust_type.as_str() {
+            "String" | "&str" => "string",
+            "i64" | "u64" => "int64",
+            "i32" | "u32" => "int32",
+            "bool" => "bool",
+            "f64" => "double",
+            "Vec<u8>" => "bytes",
+            "Vec<String>" => "string", // repeated handled at field level
+            "serde_json::Value" | "HashMap<String, serde_json::Value>" => "google.protobuf.Struct",
+            _ => "string",
+        }
+    } else {
+        "string"
     }
+}
+
+/// Check if any command uses a type that requires the struct.proto import.
+fn needs_struct_import(spec: &ProtocolSpec) -> bool {
+    spec.commands.values().any(|cmd| {
+        cmd.params
+            .iter()
+            .any(|p| proto_type(spec, &p.param_type) == "google.protobuf.Struct")
+            || cmd
+                .response
+                .iter()
+                .any(|f| proto_type(spec, &f.field_type) == "google.protobuf.Struct")
+    })
 }
 
 /// Derive the RPC method name from a command definition key.
 ///
 /// For commands with a subcommand (e.g. verb="CONFIG" subcommand="GET"),
-/// we combine them: "ConfigGet". Otherwise we just upper‐camel the key.
+/// we combine them: "ConfigGet". Otherwise we just upper-camel the key.
 fn rpc_method_name(cmd_key: &str, verb: &str, subcommand: &Option<String>) -> String {
     if let Some(sub) = subcommand {
         let combined = format!("{}_{}", verb.to_lowercase(), sub.to_lowercase());
@@ -58,22 +79,57 @@ fn gen_proto(spec: &ProtocolSpec, n: &Naming) -> GeneratedFile {
     let mut out = String::with_capacity(4096);
 
     // Header
-    writeln!(out, "// Auto-generated from {} protocol spec. Do not edit.", n.raw).unwrap();
+    writeln!(
+        out,
+        "// Auto-generated from {} protocol spec. Do not edit.",
+        n.raw
+    )
+    .unwrap();
     writeln!(out).unwrap();
     writeln!(out, "syntax = \"proto3\";").unwrap();
     writeln!(out).unwrap();
     writeln!(out, "package {}.v1;", n.snake).unwrap();
     writeln!(out).unwrap();
-    writeln!(out, "import \"google/protobuf/struct.proto\";").unwrap();
-    writeln!(out).unwrap();
 
-    // Service definition
+    // Language-specific package options
     writeln!(
         out,
-        "// {} — {}",
-        n.pascal, spec.protocol.description
+        "option go_package = \"{}/v1;{}v1\";",
+        n.go_module, n.snake
     )
     .unwrap();
+    writeln!(out, "option java_package = \"com.shroudb.{}.v1\";", n.snake).unwrap();
+    writeln!(out, "option java_multiple_files = true;").unwrap();
+    writeln!(out).unwrap();
+
+    // Conditional import
+    if needs_struct_import(spec) {
+        writeln!(out, "import \"google/protobuf/struct.proto\";").unwrap();
+        writeln!(out).unwrap();
+    }
+
+    // Error codes enum (if any defined)
+    if !spec.error_codes.is_empty() {
+        writeln!(out, "// Error codes returned by the {} protocol.", n.pascal).unwrap();
+        writeln!(out, "enum ErrorCode {{").unwrap();
+        writeln!(out, "  ERROR_CODE_UNSPECIFIED = 0;").unwrap();
+        for (i, (code, def)) in spec.error_codes.iter().enumerate() {
+            let enum_name = code.to_uppercase();
+            writeln!(
+                out,
+                "  ERROR_CODE_{enum_name} = {}; // {} (HTTP equiv: {})",
+                i + 1,
+                def.description,
+                def.http_equiv
+            )
+            .unwrap();
+        }
+        writeln!(out, "}}").unwrap();
+        writeln!(out).unwrap();
+    }
+
+    // Service definition
+    writeln!(out, "// {} — {}", n.pascal, spec.protocol.description).unwrap();
     writeln!(out, "service {}Service {{", n.pascal).unwrap();
 
     // Collect commands for service RPCs
@@ -105,11 +161,13 @@ fn gen_proto(spec: &ProtocolSpec, n: &Naming) -> GeneratedFile {
         writeln!(out, "message {method}Request {{").unwrap();
         for (field_num, param) in cmd.params.iter().enumerate() {
             let field_name = param.name.to_snake_case();
-            let ptype = proto_type(&param.param_type);
+            let ptype = proto_type(spec, &param.param_type);
             let field_idx = field_num + 1;
 
             writeln!(out, "  // {}", param.description).unwrap();
-            if param.required {
+            if param.variadic {
+                writeln!(out, "  repeated {ptype} {field_name} = {field_idx};").unwrap();
+            } else if param.required {
                 writeln!(out, "  {ptype} {field_name} = {field_idx};").unwrap();
             } else {
                 writeln!(out, "  optional {ptype} {field_name} = {field_idx};").unwrap();
@@ -122,7 +180,7 @@ fn gen_proto(spec: &ProtocolSpec, n: &Naming) -> GeneratedFile {
         writeln!(out, "message {method}Response {{").unwrap();
         for (field_num, field) in cmd.response.iter().enumerate() {
             let field_name = field.name.to_snake_case();
-            let ftype = proto_type(&field.field_type);
+            let ftype = proto_type(spec, &field.field_type);
             let field_idx = field_num + 1;
 
             writeln!(out, "  // {}", field.description).unwrap();
@@ -143,32 +201,66 @@ fn gen_proto(spec: &ProtocolSpec, n: &Naming) -> GeneratedFile {
 
 // ─── buf.yaml ─────────────────────────────────────────────────────────────────
 
-fn gen_buf_yaml(_spec: &ProtocolSpec, n: &Naming) -> GeneratedFile {
-    GeneratedFile {
-        path: "buf.yaml".into(),
-        content: format!(
-            r#"version: v2
+fn gen_buf_yaml(spec: &ProtocolSpec, n: &Naming) -> GeneratedFile {
+    let mut content = format!(
+        r#"version: v2
 modules:
   - path: {snake}/v1
-deps:
-  - buf.build/googleapis/googleapis
 "#,
-            snake = n.snake,
-        ),
+        snake = n.snake,
+    );
+
+    // Only add googleapis dep if we import struct.proto
+    if needs_struct_import(spec) {
+        content.push_str("deps:\n  - buf.build/googleapis/googleapis\n");
+    }
+
+    content.push_str(
+        r#"lint:
+  use:
+    - STANDARD
+breaking:
+  use:
+    - FILE
+"#,
+    );
+
+    GeneratedFile {
+        path: "buf.yaml".into(),
+        content,
     }
 }
 
 // ─── README.md ────────────────────────────────────────────────────────────────
 
-fn gen_readme(_spec: &ProtocolSpec, n: &Naming) -> GeneratedFile {
-    GeneratedFile {
-        path: "README.md".into(),
-        content: format!(
-            r#"# {pascal} Protobuf Definitions
+fn gen_readme(spec: &ProtocolSpec, n: &Naming) -> GeneratedFile {
+    let mut out = String::with_capacity(2048);
 
-gRPC service definition for the {pascal} protocol.
+    writeln!(out, "# {pascal} Protobuf Definitions", pascal = n.pascal).unwrap();
+    writeln!(out).unwrap();
+    writeln!(
+        out,
+        "gRPC service definition for the {} protocol.",
+        n.pascal
+    )
+    .unwrap();
+    writeln!(out).unwrap();
 
-## Prerequisites
+    // RPC listing
+    writeln!(out, "## RPCs").unwrap();
+    writeln!(out).unwrap();
+    writeln!(out, "| Method | Description | Streaming |").unwrap();
+    writeln!(out, "|--------|-------------|-----------|").unwrap();
+    for (cmd_key, cmd) in &spec.commands {
+        let method = rpc_method_name(cmd_key, &cmd.verb, &cmd.subcommand);
+        let streaming = if cmd.streaming { "Yes" } else { "No" };
+        writeln!(out, "| `{method}` | {} | {streaming} |", cmd.description).unwrap();
+    }
+    writeln!(out).unwrap();
+
+    write!(
+        out,
+        r#"## Prerequisites
 
 Install [buf](https://buf.build/docs/installation) or `protoc` with the gRPC
 plugin for your target language.
@@ -213,8 +305,12 @@ protoc \
 - `{snake}/v1/{snake}.proto` — service and message definitions
 - `buf.yaml` — buf module configuration
 "#,
-            pascal = n.pascal,
-            snake = n.snake,
-        ),
+        snake = n.snake,
+    )
+    .unwrap();
+
+    GeneratedFile {
+        path: "README.md".into(),
+        content: out,
     }
 }
