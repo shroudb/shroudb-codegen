@@ -48,11 +48,10 @@ fn go_type(spec: &ProtocolSpec, type_name: &str, optional: bool) -> String {
         },
         None => "any",
     };
-    if optional {
+    if optional && base != "bool" {
         match base {
             "string" => "string".into(),
             "int64" => "*int64".into(),
-            "bool" => "*bool".into(),
             "map[string]any" => "map[string]any".into(),
             _ => format!("*{base}"),
         }
@@ -540,8 +539,7 @@ import (
 
 // Client is a {pascal} client backed by a connection pool.
 type Client struct {{
-	pool     *pool
-	Keyspace string // default keyspace from the connection URI (may be empty)
+	pool *pool
 }}
 
 // Connect creates a new Client from a {pascal} URI.
@@ -570,7 +568,7 @@ func Connect(uri string, opts ...PoolConfig) (*Client, error) {{
 		return nil, err
 	}}
 	p.put(c)
-	return &Client{{pool: p, Keyspace: cfg.keyspace}}, nil
+	return &Client{{pool: p}}, nil
 }}
 
 // Close shuts down the client and all pooled connections.
@@ -706,7 +704,7 @@ fn gen_go_method(out: &mut String, _spec: &ProtocolSpec, cmd_name: &str, cmd: &C
         for p in &named {
             let field_name = p.name.to_upper_camel_case();
             if p.param_type == "boolean_flag" {
-                writeln!(out, "\t{field_name} *bool").unwrap();
+                writeln!(out, "\t{field_name} bool").unwrap();
             } else if p.param_type == "json_value" {
                 writeln!(out, "\t{field_name} map[string]any").unwrap();
             } else if p.variadic {
@@ -774,27 +772,12 @@ fn gen_go_method(out: &mut String, _spec: &ProtocolSpec, cmd_name: &str, cmd: &C
             let field_name = p.name.to_upper_camel_case();
             let key = p.key.as_deref().unwrap();
             if p.param_type == "boolean_flag" {
-                writeln!(
-                    out,
-                    "\t\tif opts.{field_name} != nil && *opts.{field_name} {{"
-                )
-                .unwrap();
+                writeln!(out, "\t\tif opts.{field_name} {{").unwrap();
                 writeln!(out, "\t\t\targs = append(args, \"{key}\")").unwrap();
                 writeln!(out, "\t\t}}").unwrap();
             } else if p.param_type == "json_value" {
                 writeln!(out, "\t\tif opts.{field_name} != nil {{").unwrap();
-                writeln!(out, "\t\t\tb, err := json.Marshal(opts.{field_name})").unwrap();
-                writeln!(out, "\t\t\tif err != nil {{").unwrap();
-                if has_response {
-                    writeln!(
-                        out,
-                        "\t\t\t\treturn nil, fmt.Errorf(\"{field_name}: %w\", err)"
-                    )
-                    .unwrap();
-                } else {
-                    writeln!(out, "\t\t\t\treturn fmt.Errorf(\"{field_name}: %w\", err)").unwrap();
-                }
-                writeln!(out, "\t\t\t}}").unwrap();
+                writeln!(out, "\t\t\tb, _ := json.Marshal(opts.{field_name})").unwrap();
                 writeln!(out, "\t\t\targs = append(args, \"{key}\", string(b))").unwrap();
                 writeln!(out, "\t\t}}").unwrap();
             } else if p.variadic {
@@ -887,7 +870,6 @@ import (
 type Pipeline struct {{
 	pool     *pool
 	commands []pipelineCmd
-	err      error // first error from building commands (e.g. json.Marshal failure)
 }}
 
 type pipelineCmd struct {{
@@ -897,9 +879,6 @@ type pipelineCmd struct {{
 
 // Execute sends all queued commands and returns typed responses.
 func (p *Pipeline) Execute() ([]any, error) {{
-	if p.err != nil {{
-		return nil, p.err
-	}}
 	conn, err := p.pool.get()
 	if err != nil {{
 		return nil, err
@@ -1030,20 +1009,12 @@ fn gen_go_pipeline_method(out: &mut String, cmd_name: &str, cmd: &CommandDef) {
             let field_name = p.name.to_upper_camel_case();
             let key = p.key.as_deref().unwrap();
             if p.param_type == "boolean_flag" {
-                writeln!(
-                    out,
-                    "\t\tif opts.{field_name} != nil && *opts.{field_name} {{"
-                )
-                .unwrap();
+                writeln!(out, "\t\tif opts.{field_name} {{").unwrap();
                 writeln!(out, "\t\t\targs = append(args, \"{key}\")").unwrap();
                 writeln!(out, "\t\t}}").unwrap();
             } else if p.param_type == "json_value" {
                 writeln!(out, "\t\tif opts.{field_name} != nil {{").unwrap();
-                writeln!(out, "\t\t\tb, err := json.Marshal(opts.{field_name})").unwrap();
-                writeln!(out, "\t\t\tif err != nil {{").unwrap();
-                writeln!(out, "\t\t\t\tp.err = fmt.Errorf(\"{field_name}: %w\", err)").unwrap();
-                writeln!(out, "\t\t\t\treturn p").unwrap();
-                writeln!(out, "\t\t\t}}").unwrap();
+                writeln!(out, "\t\t\tb, _ := json.Marshal(opts.{field_name})").unwrap();
                 writeln!(out, "\t\t\targs = append(args, \"{key}\", string(b))").unwrap();
                 writeln!(out, "\t\t}}").unwrap();
             } else if p.variadic {
@@ -1114,53 +1085,6 @@ fn gen_readme(spec: &ProtocolSpec, n: &Naming) -> GeneratedFile {
         cmds.push_str(&format!("- `client.{method}(...)` — {}\n", cmd.description));
     }
 
-    // Build spec-driven quick-start example from the first two non-streaming commands
-    let mut example_lines = String::new();
-    let mut shown = 0;
-    for (cmd_name, cmd) in &spec.commands {
-        if cmd.streaming {
-            continue;
-        }
-        if shown >= 2 {
-            break;
-        }
-        let method = cmd_name.to_upper_camel_case();
-        let positional = cmd.positional_params();
-        let named = cmd.named_params();
-        let has_options = !named.is_empty();
-        let has_response = !cmd.response.is_empty() && !cmd.simple_response;
-
-        // Build argument list with placeholder values
-        let mut args: Vec<String> = Vec::new();
-        for p in &positional {
-            args.push(format!("\"example-{}\"", p.name));
-        }
-        if has_options {
-            args.push("nil".into());
-        }
-
-        let call = format!("{snake}.{method}({})", args.join(", "), snake = n.snake);
-        if has_response {
-            writeln!(
-                example_lines,
-                "    // {}\n    result, err := client.{method}({})\n    if err != nil {{\n        log.Fatal(err)\n    }}\n    fmt.Println(result)\n",
-                cmd.description,
-                args.join(", "),
-            )
-            .unwrap();
-        } else {
-            writeln!(
-                example_lines,
-                "    // {}\n    if err := client.{method}({}); err != nil {{\n        log.Fatal(err)\n    }}\n",
-                cmd.description,
-                args.join(", "),
-            )
-            .unwrap();
-        }
-        let _ = call; // suppress unused
-        shown += 1;
-    }
-
     GeneratedFile {
         path: "README.md".into(),
         content: format!(
@@ -1193,7 +1117,20 @@ func main() {{
     }}
     defer client.Close()
 
-{example}}}
+    // Issue a credential
+    result, err := client.Issue("my-keyspace", &{snake}.IssueOptions{{Ttl: 3600}})
+    if err != nil {{
+        log.Fatal(err)
+    }}
+    fmt.Println(result.CredentialId, result.Token)
+
+    // Verify it
+    verified, err := client.Verify("my-keyspace", result.Token, nil)
+    if err != nil {{
+        log.Fatal(err)
+    }}
+    fmt.Println(verified.State) // "active"
+}}
 ```
 
 ## Connection URI
@@ -1235,7 +1172,6 @@ This client was generated by `shroudb-codegen` from `protocol.toml`.
             scheme_tls = scheme_tls,
             port = n.default_port,
             description = n.description,
-            example = example_lines,
             cmds = cmds,
         ),
     }

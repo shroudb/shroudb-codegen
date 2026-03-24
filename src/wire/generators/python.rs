@@ -88,13 +88,18 @@ class _Connection:
         self._writer = writer
 
     @classmethod
-    async def open(cls, host: str, port: int, *, tls: bool = False) -> "_Connection":
+    async def open(
+        cls, host: str, port: int, *, tls: bool = False, auth: str | None = None,
+    ) -> "_Connection":
         if tls:
             ctx = ssl.create_default_context()
             reader, writer = await asyncio.open_connection(host, port, ssl=ctx)
         else:
             reader, writer = await asyncio.open_connection(host, port)
-        return cls(reader, writer)
+        conn = cls(reader, writer)
+        if auth:
+            await conn.execute("AUTH", auth)
+        return conn
 
     async def execute(self, *args: str) -> Any:
         """Send a command and read the response."""
@@ -227,9 +232,7 @@ class _Pool:
             self._open += 1
 
         try:
-            conn = await _Connection.open(self._host, self._port, tls=self._tls)
-            if self._auth:
-                await conn.execute("AUTH", self._auth)
+            conn = await _Connection.open(self._host, self._port, tls=self._tls, auth=self._auth)
             return conn
         except Exception:
             async with self._lock:
@@ -390,6 +393,29 @@ from typing import Any, Optional
         writeln!(out).unwrap();
     }
 
+    // SubscriptionEvent dataclass
+    out.push_str(
+        r#"
+@dataclass
+class SubscriptionEvent:
+    """A real-time event from a SUBSCRIBE stream."""
+
+    event_type: str = ""
+    keyspace: str = ""
+    detail: str = ""
+    timestamp: int = 0
+
+    @staticmethod
+    def _from_frame(frame: list) -> "SubscriptionEvent":
+        return SubscriptionEvent(
+            event_type=frame[1],
+            keyspace=frame[2],
+            detail=frame[3],
+            timestamp=int(frame[4]),
+        )
+"#,
+    );
+
     GeneratedFile {
         path: format!("{}/types.py", n.snake),
         content: out,
@@ -423,12 +449,14 @@ Auto-generated from {raw} protocol spec. Do not edit.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any, Optional
 
 from .errors import {pascal}Error
-from ._connection import DEFAULT_PORT
+from ._connection import _Connection, DEFAULT_PORT
 from ._pool import _Pool
+from .types import SubscriptionEvent
 "#,
         pascal = n.pascal,
         raw = n.raw,
@@ -498,6 +526,35 @@ def parse_uri(uri: str) -> dict[str, Any]:
     }}
 
 
+class Subscription:
+    """Async iterator for subscription events. Use as async context manager."""
+
+    def __init__(self, conn: _Connection) -> None:
+        self._conn = conn
+
+    async def __aenter__(self) -> "Subscription":
+        return self
+
+    async def __aexit__(self, *exc: Any) -> None:
+        await self.close()
+
+    def __aiter__(self) -> "Subscription":
+        return self
+
+    async def __anext__(self) -> SubscriptionEvent:
+        try:
+            frame = await self._conn._read_frame()
+            if isinstance(frame, list) and len(frame) >= 5 and frame[0] == "event":
+                return SubscriptionEvent._from_frame(frame)
+            return await self.__anext__()
+        except (ConnectionError, asyncio.IncompleteReadError):
+            raise StopAsyncIteration
+
+    async def close(self) -> None:
+        """Close the underlying connection, ending the subscription."""
+        await self._conn.close()
+
+
 class {pascal}Client:
     """Async client for the {pascal} {description}.
 
@@ -514,8 +571,20 @@ class {pascal}Client:
         client = await {pascal}Client.connect("{scheme}://localhost", max_idle=8)
     """
 
-    def __init__(self, pool: _Pool) -> None:
+    def __init__(
+        self,
+        pool: _Pool,
+        *,
+        host: str,
+        port: int,
+        tls: bool,
+        auth: str | None,
+    ) -> None:
         self._pool = pool
+        self._host = host
+        self._port = port
+        self._tls = tls
+        self._auth = auth
 
     @classmethod
     async def connect(
@@ -551,7 +620,13 @@ class {pascal}Client:
             max_idle=max_idle,
             max_open=max_open,
         )
-        return cls(pool)
+        return cls(
+            pool,
+            host=cfg["host"],
+            port=cfg["port"],
+            tls=cfg["tls"],
+            auth=cfg["auth_token"],
+        )
 
     async def close(self) -> None:
         """Close the client and all pooled connections."""
@@ -598,7 +673,7 @@ class {pascal}Client:
     // Generate a method for each command
     for (cmd_name, cmd) in &spec.commands {
         writeln!(out).unwrap();
-        gen_python_method(&mut out, spec, cmd_name, cmd);
+        gen_python_method(&mut out, spec, cmd_name, cmd, &n.pascal);
     }
 
     GeneratedFile {
@@ -607,9 +682,15 @@ class {pascal}Client:
     }
 }
 
-fn gen_python_method(out: &mut String, spec: &ProtocolSpec, cmd_name: &str, cmd: &CommandDef) {
+fn gen_python_method(
+    out: &mut String,
+    spec: &ProtocolSpec,
+    cmd_name: &str,
+    cmd: &CommandDef,
+    pascal: &str,
+) {
     if cmd.streaming {
-        gen_python_subscribe(out, cmd);
+        gen_python_subscribe(out, cmd, pascal);
         return;
     }
 
@@ -706,29 +787,67 @@ fn gen_python_method(out: &mut String, spec: &ProtocolSpec, cmd_name: &str, cmd:
     writeln!(out).unwrap();
 }
 
-fn gen_python_subscribe(out: &mut String, _cmd: &CommandDef) {
-    out.push_str(
-        r#"    async def subscribe(self, channel: str):
-        """Subscribe to real-time event notifications.
-
-        Args:
-            channel: Channel name (e.g. ``"keyspace:tokens"``).
-
-        Yields event arrays as they arrive::
-
-            async for event in client.subscribe("keyspace:tokens"):
-                print(event)  # ['issued', 'tokens', 'cred_abc123']
-        """
-        await self._conn.execute("SUBSCRIBE", channel)
-        while True:
-            try:
-                frame = await self._conn._read_frame()
-                yield frame
-            except ConnectionError:
-                break
-
-"#,
-    );
+fn gen_python_subscribe(out: &mut String, _cmd: &CommandDef, pascal: &str) {
+    writeln!(
+        out,
+        r#"    async def subscribe(self, channel: str) -> Subscription:"#
+    )
+    .unwrap();
+    writeln!(
+        out,
+        r#"        """Subscribe to real-time event notifications."#
+    )
+    .unwrap();
+    writeln!(out).unwrap();
+    writeln!(
+        out,
+        r#"        Opens a dedicated connection for streaming events."#
+    )
+    .unwrap();
+    writeln!(out, r#"        Use as an async context manager:"#).unwrap();
+    writeln!(out).unwrap();
+    writeln!(
+        out,
+        r#"            async with await client.subscribe("keyspace:tokens") as sub:"#
+    )
+    .unwrap();
+    writeln!(out, r#"                async for event in sub:"#).unwrap();
+    writeln!(
+        out,
+        r#"                    print(event.event_type, event.keyspace, event.detail)"#
+    )
+    .unwrap();
+    writeln!(out).unwrap();
+    writeln!(out, r#"        Args:"#).unwrap();
+    writeln!(
+        out,
+        r#"            channel: Channel name (e.g. "keyspace:tokens") or "*" for all events."#
+    )
+    .unwrap();
+    writeln!(out).unwrap();
+    writeln!(out, r#"        Returns:"#).unwrap();
+    writeln!(out, r#"            A Subscription async iterator."#).unwrap();
+    writeln!(out, r#"        """"#).unwrap();
+    writeln!(out, r#"        conn = await _Connection.open(self._host, self._port, tls=self._tls, auth=self._auth)"#).unwrap();
+    writeln!(
+        out,
+        r#"        result = await conn.execute("SUBSCRIBE", channel)"#
+    )
+    .unwrap();
+    writeln!(
+        out,
+        r#"        if isinstance(result, dict) and result.get("status") != "OK":"#
+    )
+    .unwrap();
+    writeln!(out, r#"            await conn.close()"#).unwrap();
+    writeln!(
+        out,
+        r#"            raise {pascal}Error("SUBSCRIBE_FAILED", str(result))"#,
+        pascal = pascal
+    )
+    .unwrap();
+    writeln!(out, r#"        return Subscription(conn)"#).unwrap();
+    writeln!(out).unwrap();
 }
 
 // ─── _pipeline.py ────────────────────────────────────────────────────────────
@@ -968,9 +1087,10 @@ Usage::
         result = await client.issue("my-keyspace", ttl_secs=3600)
         print(result.credential_id, result.token)
 """
-from .client import {pascal}Client
+from .client import {pascal}Client, Subscription
 from .errors import {pascal}Error
 from ._pipeline import Pipeline
+from .types import SubscriptionEvent
 "#,
         pascal = n.pascal,
         raw = n.raw,
@@ -1009,6 +1129,8 @@ from ._pipeline import Pipeline
     writeln!(out, "__all__ = [").unwrap();
     writeln!(out, "    \"{}Client\",", n.pascal).unwrap();
     writeln!(out, "    \"Pipeline\",").unwrap();
+    writeln!(out, "    \"Subscription\",").unwrap();
+    writeln!(out, "    \"SubscriptionEvent\",").unwrap();
     writeln!(out, "    \"{}Error\",", n.pascal).unwrap();
     for name in &type_names {
         writeln!(out, "    \"{name}\",").unwrap();
@@ -1121,6 +1243,18 @@ client = await {pascal}Client.connect("{scheme}://localhost", max_idle=8, max_op
 ## Commands
 
 {cmds}
+
+## Real-time Subscriptions
+
+```python
+async with await {pascal}Client.connect("{scheme}://localhost") as client:
+    async with await client.subscribe("keyspace:tokens") as sub:
+        async for event in sub:
+            print(event.event_type, event.keyspace, event.detail, event.timestamp)
+```
+
+Use `"*"` to subscribe to all events. Close the subscription (or exit the
+`async with` block) to stop receiving events.
 
 ## Context Manager
 
