@@ -604,17 +604,17 @@ end
 }
 
 fn gen_ruby_method(out: &mut String, spec: &ProtocolSpec, cmd_name: &str, cmd: &CommandDef) {
+    let method_name = cmd_name.to_snake_case();
+
     if cmd.streaming {
         writeln!(
             out,
-            "    # subscribe is not yet supported (requires streaming)."
+            "    # {method_name}() is not yet supported (requires streaming)."
         )
         .unwrap();
         writeln!(out).unwrap();
         return;
     }
-
-    let method_name = cmd_name.to_snake_case();
     let positional = cmd.positional_params();
     let named = cmd.named_params();
     let has_response = !cmd.response.is_empty() && !cmd.simple_response;
@@ -794,17 +794,18 @@ fn gen_ruby_pipeline_method(
     cmd_name: &str,
     cmd: &CommandDef,
 ) {
+    let method_name = cmd_name.to_snake_case();
+
     if cmd.streaming {
         writeln!(
             out,
-            "    # subscribe is not yet supported (requires streaming)."
+            "    # {method_name}() is not yet supported in pipeline (requires streaming)."
         )
         .unwrap();
         writeln!(out).unwrap();
         return;
     }
 
-    let method_name = cmd_name.to_snake_case();
     let positional = cmd.positional_params();
     let named = cmd.named_params();
     let has_response = !cmd.response.is_empty() && !cmd.simple_response;

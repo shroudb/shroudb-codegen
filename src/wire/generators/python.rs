@@ -804,9 +804,15 @@ class Pipeline:
     )
     .unwrap();
 
-    // Generate a pipeline method for each command
+    // Generate a pipeline method for each command (streaming commands are skipped)
     for (cmd_name, cmd) in &spec.commands {
         if cmd.streaming {
+            let method_name = cmd_name.to_snake_case();
+            writeln!(
+                out,
+                "\n    # {method_name}() is not yet supported in pipeline (requires streaming)."
+            )
+            .unwrap();
             continue;
         }
         writeln!(out).unwrap();

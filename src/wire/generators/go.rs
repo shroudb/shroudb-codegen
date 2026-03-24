@@ -703,16 +703,17 @@ func parseURI(uri string) (*uriConfig, error) {{
 }
 
 fn gen_go_method(out: &mut String, _spec: &ProtocolSpec, cmd_name: &str, cmd: &CommandDef) {
+    let method_name = cmd_name.to_upper_camel_case();
+
     if cmd.streaming {
         writeln!(
             out,
-            "// Subscribe is not yet supported in the Go client (requires streaming)."
+            "// {method_name}() is not yet supported (requires streaming)."
         )
         .unwrap();
+        writeln!(out).unwrap();
         return;
     }
-
-    let method_name = cmd_name.to_upper_camel_case();
     let positional = cmd.positional_params();
     let named = cmd.named_params();
 
@@ -972,12 +973,14 @@ func (p *Pipeline) Clear() {{ p.commands = p.commands[:0] }}
 }
 
 fn gen_go_pipeline_method(out: &mut String, cmd_name: &str, cmd: &CommandDef) {
+    let method_name = cmd_name.to_upper_camel_case();
     if cmd.streaming {
         writeln!(
             out,
-            "// Pipeline.Subscribe is not supported (requires streaming)."
+            "// Pipeline.{method_name}() is not supported (requires streaming)."
         )
         .unwrap();
+        writeln!(out).unwrap();
         return;
     }
 

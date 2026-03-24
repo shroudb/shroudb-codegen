@@ -677,16 +677,17 @@ export class {pascal}Client {{
 }
 
 fn gen_ts_method(out: &mut String, spec: &ProtocolSpec, cmd_name: &str, cmd: &CommandDef) {
+    let method_name = cmd_name.to_lower_camel_case();
+
     if cmd.streaming {
         writeln!(
             out,
-            "  // subscribe() requires streaming support — use raw connection"
+            "  // {method_name}() is not yet supported (requires streaming)."
         )
         .unwrap();
+        writeln!(out).unwrap();
         return;
     }
-
-    let method_name = cmd_name.to_lower_camel_case();
     let positional = cmd.positional_params();
     let named = cmd.named_params();
 
@@ -894,16 +895,17 @@ export class Pipeline {{
 }
 
 fn gen_ts_pipeline_method(out: &mut String, spec: &ProtocolSpec, cmd_name: &str, cmd: &CommandDef) {
+    let method_name = cmd_name.to_lower_camel_case();
+
     if cmd.streaming {
         writeln!(
             out,
-            "  // subscribe() requires streaming support — not available in pipeline"
+            "  // {method_name}() is not yet supported in pipeline (requires streaming)."
         )
         .unwrap();
+        writeln!(out).unwrap();
         return;
     }
-
-    let method_name = cmd_name.to_lower_camel_case();
     let positional = cmd.positional_params();
     let named = cmd.named_params();
 
