@@ -501,6 +501,18 @@ package {snake}
         writeln!(out).unwrap();
     }
 
+    // SubscriptionEvent type for streaming subscribe
+    out.push_str(
+        r#"// SubscriptionEvent represents a real-time event from a SUBSCRIBE stream.
+type SubscriptionEvent struct {
+	EventType string
+	Keyspace  string
+	Detail    string
+	Timestamp int64
+}
+"#,
+    );
+
     GeneratedFile {
         path: "types.go".into(),
         content: out,
@@ -540,6 +552,10 @@ import (
 // Client is a {pascal} client backed by a connection pool.
 type Client struct {{
 	pool *pool
+	host string
+	port int
+	tls  bool
+	auth string
 }}
 
 // Connect creates a new Client from a {pascal} URI.
@@ -568,7 +584,7 @@ func Connect(uri string, opts ...PoolConfig) (*Client, error) {{
 		return nil, err
 	}}
 	p.put(c)
-	return &Client{{pool: p}}, nil
+	return &Client{{pool: p, host: cfg.host, port: cfg.port, tls: cfg.tls, auth: cfg.authToken}}, nil
 }}
 
 // Close shuts down the client and all pooled connections.
@@ -605,6 +621,120 @@ func (c *Client) execMap(args ...string) (map[string]any, error) {{
 		return nil, fmt.Errorf("{snake}: expected map response, got %T", result)
 	}}
 	return m, nil
+}}
+
+// Subscription represents an active streaming subscription.
+type Subscription struct {{
+	conn   *connection
+	events chan SubscriptionEvent
+	errc   chan error
+	done   chan struct{{}}
+}}
+
+// Events returns a channel that receives subscription events.
+func (s *Subscription) Events() <-chan SubscriptionEvent {{
+	return s.events
+}}
+
+// Err returns a channel that receives the first read error (including clean shutdown).
+func (s *Subscription) Err() <-chan error {{
+	return s.errc
+}}
+
+// Close terminates the subscription and closes the underlying connection.
+func (s *Subscription) Close() error {{
+	select {{
+	case <-s.done:
+		return nil
+	default:
+		close(s.done)
+		return s.conn.close()
+	}}
+}}
+
+func (s *Subscription) readLoop() {{
+	defer close(s.events)
+	for {{
+		select {{
+		case <-s.done:
+			return
+		default:
+		}}
+		raw, err := s.conn.readFrame()
+		if err != nil {{
+			select {{
+			case s.errc <- err:
+			default:
+			}}
+			return
+		}}
+		arr, ok := raw.([]any)
+		if !ok || len(arr) != 5 {{
+			continue
+		}}
+		tag, _ := arr[0].(string)
+		if tag != "event" {{
+			continue
+		}}
+		evtType, _ := arr[1].(string)
+		keyspace, _ := arr[2].(string)
+		detail, _ := arr[3].(string)
+		var ts int64
+		switch v := arr[4].(type) {{
+		case int64:
+			ts = v
+		case string:
+			ts, _ = strconv.ParseInt(v, 10, 64)
+		}}
+		evt := SubscriptionEvent{{
+			EventType: evtType,
+			Keyspace:  keyspace,
+			Detail:    detail,
+			Timestamp: ts,
+		}}
+		select {{
+		case s.events <- evt:
+		case <-s.done:
+			return
+		}}
+	}}
+}}
+
+// Subscribe opens a dedicated connection and subscribes to the given channel.
+// The returned Subscription streams events until Close is called or an error occurs.
+func (c *Client) Subscribe(channel string) (*Subscription, error) {{
+	conn, err := dial(c.host, c.port, c.tls)
+	if err != nil {{
+		return nil, err
+	}}
+	if c.auth != "" {{
+		if _, err := conn.execute("AUTH", c.auth); err != nil {{
+			conn.close()
+			return nil, err
+		}}
+	}}
+	resp, err := conn.execute("SUBSCRIBE", channel)
+	if err != nil {{
+		conn.close()
+		return nil, err
+	}}
+	m, ok := resp.(map[string]any)
+	if !ok {{
+		conn.close()
+		return nil, fmt.Errorf("{snake}: expected map response for SUBSCRIBE, got %T", resp)
+	}}
+	if status, _ := m["status"].(string); status != "OK" {{
+		conn.close()
+		return nil, fmt.Errorf("{snake}: subscribe failed: %v", m)
+	}}
+	sub := &Subscription{{
+		conn:   conn,
+		events: make(chan SubscriptionEvent, 64),
+		errc:   make(chan error, 1),
+		done:   make(chan struct{{}}),
+	}}
+	go sub.readLoop()
+	return sub, nil
 }}
 
 type uriConfig struct {{
@@ -676,11 +806,7 @@ func parseURI(uri string) (*uriConfig, error) {{
 
 fn gen_go_method(out: &mut String, _spec: &ProtocolSpec, cmd_name: &str, cmd: &CommandDef) {
     if cmd.streaming {
-        writeln!(
-            out,
-            "// Subscribe is not yet supported in the Go client (requires streaming)."
-        )
-        .unwrap();
+        // Subscribe method is generated inline in gen_client; nothing else needed here.
         return;
     }
 
@@ -945,11 +1071,7 @@ func (p *Pipeline) Clear() {{ p.commands = p.commands[:0] }}
 
 fn gen_go_pipeline_method(out: &mut String, cmd_name: &str, cmd: &CommandDef) {
     if cmd.streaming {
-        writeln!(
-            out,
-            "// Pipeline.Subscribe is not supported (requires streaming)."
-        )
-        .unwrap();
+        // Streaming commands cannot be pipelined; silently skip.
         return;
     }
 
@@ -1159,6 +1281,32 @@ client, err := {snake}.Connect("{scheme}://localhost", {snake}.PoolConfig{{
 ## Commands
 
 {cmds}
+
+## Streaming Subscribe
+
+Subscribe to real-time events on a channel:
+
+```go
+sub, err := client.Subscribe("my-channel")
+if err != nil {{
+    log.Fatal(err)
+}}
+defer sub.Close()
+
+for evt := range sub.Events() {{
+    fmt.Printf("[%s] %s %s at %d\n", evt.EventType, evt.Keyspace, evt.Detail, evt.Timestamp)
+}}
+// Check for read errors after the channel closes
+if err := <-sub.Err(); err != nil {{
+    log.Println("subscription error:", err)
+}}
+```
+
+Each `SubscriptionEvent` contains:
+- `EventType` — the type of event (e.g. "issued", "revoked")
+- `Keyspace` — the affected keyspace
+- `Detail` — additional event detail
+- `Timestamp` — Unix timestamp of the event
 
 ## Auto-generated
 

@@ -32,6 +32,7 @@ impl Generator for RubyGenerator {
             gen_pipeline(spec, &n),
             gen_errors(spec, &n),
             gen_types(spec, &n),
+            gen_subscription(spec, &n),
             gen_client(spec, &n),
             gen_gemspec(spec, &n),
             gen_readme(spec, &n),
@@ -81,6 +82,7 @@ require_relative "{snake}/types"
 require_relative "{snake}/connection"
 require_relative "{snake}/pool"
 require_relative "{snake}/pipeline"
+require_relative "{snake}/subscription"
 require_relative "{snake}/client"
 
 module {pascal}
@@ -413,11 +415,84 @@ module {pascal}
         writeln!(out).unwrap();
     }
 
+    out.push_str("  # Event received from a streaming subscription.\n");
+    out.push_str(
+        "  SubscriptionEvent = Struct.new(:event_type, :keyspace, :detail, :timestamp, keyword_init: true)\n",
+    );
     out.push_str("end\n");
 
     GeneratedFile {
         path: format!("lib/{}/types.rb", n.snake),
         content: out,
+    }
+}
+
+// ─── lib/{name}/subscription.rb ──────────────────────────────────────────────
+
+fn gen_subscription(_spec: &ProtocolSpec, n: &Naming) -> GeneratedFile {
+    GeneratedFile {
+        path: format!("lib/{}/subscription.rb", n.snake),
+        content: format!(
+            r#"# frozen_string_literal: true
+
+# {pascal} streaming subscription.
+#
+# Auto-generated from {raw} protocol spec. Do not edit.
+
+module {pascal}
+  # A streaming subscription that yields SubscriptionEvent objects.
+  #
+  # Includes Enumerable so you can use +each+, +map+, +select+, etc.
+  #
+  # Usage:
+  #
+  #   sub = client.subscribe("my-channel")
+  #   sub.each {{ |event| puts event.event_type }}
+  #   sub.close
+  #
+  class Subscription
+    include Enumerable
+
+    def initialize(conn)
+      @conn = conn
+      @closed = false
+    end
+
+    # Yield each SubscriptionEvent from the server stream.
+    #
+    # The server sends arrays: ["event", event_type, keyspace, detail, timestamp]
+    #
+    # @yield [SubscriptionEvent]
+    def each
+      return enum_for(:each) unless block_given?
+
+      until @closed
+        frame = @conn.read_response
+        next unless frame.is_a?(Array) && frame[0] == "event" && frame.length >= 5
+
+        yield SubscriptionEvent.new(
+          event_type: frame[1],
+          keyspace: frame[2],
+          detail: frame[3],
+          timestamp: frame[4]
+        )
+      end
+    rescue {pascal}::ConnectionError
+      # Server closed the connection; subscription is done.
+      @closed = true
+    end
+
+    # Close the subscription and its dedicated connection.
+    def close
+      @closed = true
+      @conn.close
+    end
+  end
+end
+"#,
+            pascal = n.pascal,
+            raw = n.raw,
+        ),
     }
 }
 
@@ -472,7 +547,7 @@ module {pascal}
         max_idle: max_idle,
         max_open: max_open
       )
-      new(pool)
+      new(pool, host: cfg[:host], port: cfg[:port], tls: cfg[:tls], auth: cfg[:auth_token])
     end
 
     # Close the client and all pooled connections.
@@ -516,8 +591,12 @@ module {pascal}
         out,
         r#"    private
 
-    def initialize(pool)
+    def initialize(pool, host:, port:, tls:, auth:)
       @pool = pool
+      @host = host
+      @port = port
+      @tls = tls
+      @auth = auth
     end
 
     def exec(*args)
@@ -574,12 +653,7 @@ end
 
 fn gen_ruby_method(out: &mut String, spec: &ProtocolSpec, cmd_name: &str, cmd: &CommandDef) {
     if cmd.streaming {
-        writeln!(
-            out,
-            "    # subscribe is not yet supported (requires streaming)."
-        )
-        .unwrap();
-        writeln!(out).unwrap();
+        gen_ruby_subscribe_method(out, cmd);
         return;
     }
 
@@ -684,6 +758,77 @@ fn gen_ruby_method(out: &mut String, spec: &ProtocolSpec, cmd_name: &str, cmd: &
     writeln!(out).unwrap();
 }
 
+fn gen_ruby_subscribe_method(out: &mut String, cmd: &CommandDef) {
+    let verb = &cmd.verb;
+    writeln!(out, "    # {}", cmd.description).unwrap();
+    writeln!(out, "    #").unwrap();
+    writeln!(
+        out,
+        "    # Opens a dedicated connection for streaming events."
+    )
+    .unwrap();
+    writeln!(out, "    #").unwrap();
+    writeln!(
+        out,
+        "    # Block form: yields events, auto-closes on return."
+    )
+    .unwrap();
+    writeln!(out, "    #").unwrap();
+    writeln!(out, "    #   client.subscribe(\"my-channel\") do |event|").unwrap();
+    writeln!(out, "    #     puts event.event_type").unwrap();
+    writeln!(out, "    #   end").unwrap();
+    writeln!(out, "    #").unwrap();
+    writeln!(
+        out,
+        "    # Non-block form: returns a Subscription (caller must close)."
+    )
+    .unwrap();
+    writeln!(out, "    #").unwrap();
+    writeln!(out, "    #   sub = client.subscribe(\"my-channel\")").unwrap();
+    writeln!(out, "    #   sub.each {{ |event| break if done? }}").unwrap();
+    writeln!(out, "    #   sub.close").unwrap();
+    writeln!(out, "    #").unwrap();
+    writeln!(
+        out,
+        "    # @param channel [String] the channel to subscribe to"
+    )
+    .unwrap();
+    writeln!(
+        out,
+        "    # @yield [SubscriptionEvent] each event from the stream"
+    )
+    .unwrap();
+    writeln!(out, "    # @return [Subscription] if no block given").unwrap();
+    writeln!(out, "    def subscribe(channel, &block)").unwrap();
+    writeln!(out, "      conn = Connection.open(@host, @port, tls: @tls)").unwrap();
+    writeln!(out, "      conn.execute(\"AUTH\", @auth) if @auth").unwrap();
+    writeln!(out, "      result = conn.execute(\"{verb}\", channel.to_s)").unwrap();
+    writeln!(
+        out,
+        "      unless result.is_a?(Hash) && result[\"status\"] == \"OK\""
+    )
+    .unwrap();
+    writeln!(out, "        conn.close").unwrap();
+    writeln!(
+        out,
+        "        raise Error.new(\"SUBSCRIBE\", \"Unexpected subscribe response: #{{result.inspect}}\")"
+    )
+    .unwrap();
+    writeln!(out, "      end").unwrap();
+    writeln!(out, "      sub = Subscription.new(conn)").unwrap();
+    writeln!(out, "      if block").unwrap();
+    writeln!(out, "        begin").unwrap();
+    writeln!(out, "          sub.each(&block)").unwrap();
+    writeln!(out, "        ensure").unwrap();
+    writeln!(out, "          sub.close").unwrap();
+    writeln!(out, "        end").unwrap();
+    writeln!(out, "      else").unwrap();
+    writeln!(out, "        sub").unwrap();
+    writeln!(out, "      end").unwrap();
+    writeln!(out, "    end").unwrap();
+    writeln!(out).unwrap();
+}
+
 // ─── lib/{name}/pipeline.rb ──────────────────────────────────────────────────
 
 fn gen_pipeline(spec: &ProtocolSpec, n: &Naming) -> GeneratedFile {
@@ -761,12 +906,6 @@ fn gen_ruby_pipeline_method(
     cmd: &CommandDef,
 ) {
     if cmd.streaming {
-        writeln!(
-            out,
-            "    # subscribe is not yet supported (requires streaming)."
-        )
-        .unwrap();
-        writeln!(out).unwrap();
         return;
     }
 
@@ -988,6 +1127,26 @@ client = {pascal}::Client.connect("{scheme}://localhost", max_idle: 8, max_open:
 ## Commands
 
 {cmds}
+
+## Streaming Subscribe
+
+Subscribe opens a dedicated connection and streams events in real time:
+
+```ruby
+# Block form — auto-closes when the block returns
+client.subscribe("my-channel") do |event|
+  puts event.event_type
+end
+
+# Non-block form — caller manages lifecycle
+sub = client.subscribe("my-channel")
+sub.each do |event|
+  break if event.event_type == "done"
+end
+sub.close
+```
+
+Each event is a `{pascal}::SubscriptionEvent` with `event_type`, `keyspace`, `detail`, and `timestamp` fields.
 
 ## Auto-generated
 

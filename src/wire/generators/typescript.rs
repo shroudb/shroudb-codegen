@@ -6,6 +6,7 @@
 //! - `src/types.ts`      — TypeScript interfaces for responses
 //! - `src/client.ts`     — public `ShrouDBClient`, URI-first, with pool
 //! - `src/pipeline.ts`   — `Pipeline` for batching commands
+//! - `src/subscription.ts` — `Subscription` for streaming events
 //! - `src/index.ts`      — re-exports only public ShrouDB API
 //! - `package.json`      — npm metadata
 //! - `tsconfig.json`     — TypeScript config
@@ -32,6 +33,7 @@ impl Generator for TypeScriptGenerator {
             gen_types(spec, &n),
             gen_client(spec, &n),
             gen_pipeline(spec, &n),
+            gen_subscription(spec, &n),
             gen_index(spec, &n),
             gen_package_json(spec, &n),
             gen_tsconfig(&n),
@@ -455,6 +457,18 @@ fn gen_types(spec: &ProtocolSpec, n: &Naming) -> GeneratedFile {
         writeln!(out, "}}\n").unwrap();
     }
 
+    // SubscriptionEvent interface for streaming subscribe
+    out.push_str(
+        r#"/** Event received from a streaming subscription. */
+export interface SubscriptionEvent {
+  eventType: string;
+  keyspace: string;
+  detail: string;
+  timestamp: number;
+}
+"#,
+    );
+
     GeneratedFile {
         path: "src/types.ts".into(),
         content: out,
@@ -477,9 +491,10 @@ fn gen_client(spec: &ProtocolSpec, n: &Naming) -> GeneratedFile {
  * Auto-generated from {raw} protocol spec. Do not edit.
  */
 
-import {{ DEFAULT_PORT }} from "./connection";
+import {{ Connection, DEFAULT_PORT }} from "./connection";
 import {{ Pool, type PoolOptions }} from "./pool";
 import {{ Pipeline }} from "./pipeline";
+import {{ Subscription }} from "./subscription";
 import {{ {pascal}Error }} from "./errors";
 "#,
         pascal = n.pascal,
@@ -581,9 +596,21 @@ function parseUri(uri: string): {{
 export class {pascal}Client {{
   /** @internal */
   private pool: Pool;
+  /** @internal */
+  private readonly _host: string;
+  /** @internal */
+  private readonly _port: number;
+  /** @internal */
+  private readonly _tls: boolean;
+  /** @internal */
+  private readonly _auth: string | undefined;
 
-  private constructor(pool: Pool) {{
+  private constructor(pool: Pool, host: string, port: number, tls: boolean, auth: string | undefined) {{
     this.pool = pool;
+    this._host = host;
+    this._port = port;
+    this._tls = tls;
+    this._auth = auth;
   }}
 
   /**
@@ -600,7 +627,7 @@ export class {pascal}Client {{
   ): Promise<{pascal}Client> {{
     const cfg = parseUri(uri);
     const pool = new Pool(cfg.host, cfg.port, cfg.tls, cfg.authToken, poolOptions);
-    return new {pascal}Client(pool);
+    return new {pascal}Client(pool, cfg.host, cfg.port, cfg.tls, cfg.authToken);
   }}
 
   /** Close the client and all pooled connections. */
@@ -642,7 +669,7 @@ export class {pascal}Client {{
     // Generate methods
     for (cmd_name, cmd) in &spec.commands {
         writeln!(out).unwrap();
-        gen_ts_method(&mut out, spec, cmd_name, cmd);
+        gen_ts_method(&mut out, spec, cmd_name, cmd, n);
     }
 
     out.push_str("}\n");
@@ -653,13 +680,80 @@ export class {pascal}Client {{
     }
 }
 
-fn gen_ts_method(out: &mut String, spec: &ProtocolSpec, cmd_name: &str, cmd: &CommandDef) {
+fn gen_ts_method(
+    out: &mut String,
+    spec: &ProtocolSpec,
+    cmd_name: &str,
+    cmd: &CommandDef,
+    n: &Naming,
+) {
     if cmd.streaming {
+        let method_name = cmd_name.to_lower_camel_case();
+        let positional = cmd.positional_params();
+
+        let mut params: Vec<String> = Vec::new();
+        for p in &positional {
+            let ts = ts_type(spec, &p.param_type);
+            if p.required {
+                params.push(format!("{}: {ts}", p.name.to_lower_camel_case()));
+            } else {
+                params.push(format!("{}?: {ts}", p.name.to_lower_camel_case()));
+            }
+        }
+
+        writeln!(out, "  /** {} */", cmd.description).unwrap();
         writeln!(
             out,
-            "  // subscribe() requires streaming support — use raw connection"
+            "  async {method_name}({params}): Promise<Subscription> {{",
+            params = params.join(", "),
         )
         .unwrap();
+        writeln!(
+            out,
+            "    const conn = await Connection.open(this._host, this._port, this._tls);"
+        )
+        .unwrap();
+        writeln!(out, "    if (this._auth) {{").unwrap();
+        writeln!(out, "      await conn.execute(\"AUTH\", this._auth);").unwrap();
+        writeln!(out, "    }}").unwrap();
+
+        // Build args
+        writeln!(out, "    const args: string[] = [];").unwrap();
+        if let Some(sub) = &cmd.subcommand {
+            writeln!(out, "    args.push(\"{}\", \"{}\");", cmd.verb, sub).unwrap();
+        } else {
+            writeln!(out, "    args.push(\"{}\");", cmd.verb).unwrap();
+        }
+        for p in &positional {
+            let js_name = p.name.to_lower_camel_case();
+            if p.required {
+                writeln!(out, "    args.push(String({js_name}));").unwrap();
+            } else {
+                writeln!(
+                    out,
+                    "    if ({js_name} !== undefined) args.push(String({js_name}));"
+                )
+                .unwrap();
+            }
+        }
+
+        writeln!(out, "    const result = await conn.execute(...args);").unwrap();
+        writeln!(
+            out,
+            "    const status = (result as Record<string, unknown>)?.status;"
+        )
+        .unwrap();
+        writeln!(out, "    if (status !== \"OK\") {{").unwrap();
+        writeln!(out, "      conn.close();").unwrap();
+        writeln!(
+            out,
+            "      throw new {}Error(\"SUBSCRIBE\", `Subscribe failed: ${{JSON.stringify(result)}}`);",
+            n.pascal,
+        )
+        .unwrap();
+        writeln!(out, "    }}").unwrap();
+        writeln!(out, "    return new Subscription(conn);").unwrap();
+        writeln!(out, "  }}").unwrap();
         return;
     }
 
@@ -989,6 +1083,91 @@ fn gen_ts_pipeline_method(out: &mut String, spec: &ProtocolSpec, cmd_name: &str,
     writeln!(out, "  }}").unwrap();
 }
 
+// ─── subscription.ts ─────────────────────────────────────────────────────────
+
+fn gen_subscription(_spec: &ProtocolSpec, n: &Naming) -> GeneratedFile {
+    GeneratedFile {
+        path: "src/subscription.ts".into(),
+        content: format!(
+            r#"/**
+ * Streaming subscription for {pascal} events.
+ *
+ * Auto-generated from {raw} protocol spec. Do not edit.
+ */
+
+import {{ Connection }} from "./connection";
+import {{ {pascal}Error }} from "./errors";
+import type {{ SubscriptionEvent }} from "./types";
+
+/**
+ * A subscription that streams events from the server.
+ *
+ * Implements `AsyncIterable<SubscriptionEvent>` so you can use `for await`:
+ *
+ * ```ts
+ * const sub = await client.subscribe("my-channel");
+ * for await (const event of sub) {{
+ *   console.log(event.eventType, event.keyspace, event.detail);
+ * }}
+ * ```
+ */
+export class Subscription implements AsyncIterable<SubscriptionEvent> {{
+  private closed = false;
+
+  /** @internal */
+  constructor(private readonly conn: Connection) {{}}
+
+  async *[Symbol.asyncIterator](): AsyncIterableIterator<SubscriptionEvent> {{
+    while (!this.closed) {{
+      let frame: unknown;
+      try {{
+        frame = await this.conn.readResponse();
+      }} catch (_) {{
+        // Connection closed or errored — end iteration.
+        this.closed = true;
+        return;
+      }}
+
+      if (!Array.isArray(frame) || frame.length < 5) {{
+        continue;
+      }}
+
+      const [tag, eventType, keyspace, detail, timestamp] = frame as [
+        string,
+        string,
+        string,
+        string,
+        number,
+      ];
+
+      if (tag !== "event") {{
+        continue;
+      }}
+
+      yield {{
+        eventType: String(eventType),
+        keyspace: String(keyspace),
+        detail: String(detail),
+        timestamp: Number(timestamp),
+      }};
+    }}
+  }}
+
+  /** Close the subscription and its underlying connection. */
+  close(): void {{
+    if (!this.closed) {{
+      this.closed = true;
+      this.conn.close();
+    }}
+  }}
+}}
+"#,
+            pascal = n.pascal,
+            raw = n.raw,
+        ),
+    }
+}
+
 // ─── index.ts ────────────────────────────────────────────────────────────────
 
 fn gen_index(spec: &ProtocolSpec, n: &Naming) -> GeneratedFile {
@@ -1016,6 +1195,7 @@ fn gen_index(spec: &ProtocolSpec, n: &Naming) -> GeneratedFile {
 
 export {{ {pascal}Client }} from "./client";
 export {{ Pipeline }} from "./pipeline";
+export {{ Subscription }} from "./subscription";
 export {{ {pascal}Error }} from "./errors";
 "#,
         pascal = n.pascal,
@@ -1032,6 +1212,7 @@ export {{ {pascal}Error }} from "./errors";
             type_exports.push(format!("{}Response", to_pascal(cmd_name)));
         }
     }
+    type_exports.push("SubscriptionEvent".to_string());
     if !type_exports.is_empty() {
         writeln!(
             out,
@@ -1124,9 +1305,6 @@ fn gen_readme(spec: &ProtocolSpec, n: &Naming) -> GeneratedFile {
     let scheme_tls = format!("{}+tls", scheme);
     let mut cmds = String::new();
     for (cmd_name, cmd) in &spec.commands {
-        if cmd.streaming {
-            continue;
-        }
         let method = cmd_name.to_lower_camel_case();
         cmds.push_str(&format!("- `client.{method}(...)` — {}\n", cmd.description));
     }
@@ -1188,6 +1366,29 @@ const client = await {pascal}Client.connect("{scheme}://localhost", {{
 ## Commands
 
 {cmds}
+
+## Streaming Subscribe
+
+Subscribe to real-time events on a channel:
+
+```typescript
+import {{ {pascal}Client }} from "{npm_name}";
+
+const client = await {pascal}Client.connect("{scheme}://localhost");
+const sub = await client.subscribe("my-channel");
+
+for await (const event of sub) {{
+  console.log(event.eventType, event.keyspace, event.detail, event.timestamp);
+}}
+
+// When done:
+sub.close();
+client.close();
+```
+
+Each subscription opens a dedicated connection. The returned `Subscription` object
+implements `AsyncIterable<SubscriptionEvent>`, so you can use `for await...of` or
+call the async iterator manually.
 
 ## Auto-generated
 
