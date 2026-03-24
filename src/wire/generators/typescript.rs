@@ -10,9 +10,9 @@
 //! - `package.json`      — npm metadata
 //! - `tsconfig.json`     — TypeScript config
 
-use crate::generator::{GeneratedFile, Naming};
-use super::Generator;
 use super::super::spec::{CommandDef, ProtocolSpec};
+use super::Generator;
+use crate::generator::{GeneratedFile, Naming};
 use heck::ToLowerCamelCase;
 use std::fmt::Write;
 
@@ -40,16 +40,10 @@ impl Generator for TypeScriptGenerator {
     }
 }
 
-fn ts_type(spec: &ProtocolSpec, type_name: &str) -> &'static str {
+fn ts_type(spec: &ProtocolSpec, type_name: &str) -> String {
     match spec.types.get(type_name) {
-        Some(t) => match t.typescript_type.as_str() {
-            "string" => "string",
-            "number" => "number",
-            "boolean" => "boolean",
-            "Record<string, unknown>" => "Record<string, unknown>",
-            _ => "unknown",
-        },
-        None => "unknown",
+        Some(t) => t.typescript_type.clone(),
+        None => "unknown".to_string(),
     }
 }
 
@@ -74,7 +68,7 @@ import {{ {pascal}Error }} from "./errors";
 
 export const DEFAULT_PORT = {port};
 
-type WireValue = string | number | null | WireValue[] | Record<string, WireValue>;
+type WireValue = string | number | null | WireValue[] | {{ [key: string]: WireValue }};
 
 /** @internal */
 export class Connection {{
@@ -292,6 +286,7 @@ export interface PoolOptions {{
 export class Pool {{
   private idle: Connection[] = [];
   private open = 0;
+  private waiters: Array<(conn: Connection) => void> = [];
   private readonly maxIdle: number;
   private readonly maxOpen: number;
 
@@ -307,24 +302,47 @@ export class Pool {{
   }}
 
   async get(): Promise<Connection> {{
+    // Reuse an idle connection if available
     if (this.idle.length > 0) {{
       return this.idle.pop()!;
     }}
 
-    this.open++;
-    try {{
-      const conn = await Connection.open(this.host, this.port, this.tls);
-      if (this.auth) {{
-        await conn.execute("AUTH", this.auth);
+    // Create a new connection if under the limit (or unlimited)
+    if (this.maxOpen === 0 || this.open < this.maxOpen) {{
+      this.open++;
+      try {{
+        const conn = await Connection.open(this.host, this.port, this.tls);
+        if (this.auth) {{
+          await conn.execute("AUTH", this.auth);
+        }}
+        return conn;
+      }} catch (e) {{
+        this.open--;
+        throw e;
       }}
-      return conn;
-    }} catch (e) {{
-      this.open--;
-      throw e;
     }}
+
+    // At limit — wait for a connection to be returned
+    return new Promise<Connection>((resolve, reject) => {{
+      const timer = setTimeout(() => {{
+        const idx = this.waiters.indexOf(resolve);
+        if (idx >= 0) this.waiters.splice(idx, 1);
+        reject(new Error("connection pool exhausted (timeout)"));
+      }}, 3_000);
+      this.waiters.push((conn: Connection) => {{
+        clearTimeout(timer);
+        resolve(conn);
+      }});
+    }});
   }}
 
   put(conn: Connection): void {{
+    // Hand directly to a waiter if one is waiting
+    if (this.waiters.length > 0) {{
+      const waiter = this.waiters.shift()!;
+      waiter(conn);
+      return;
+    }}
     if (this.idle.length < this.maxIdle) {{
       this.idle.push(conn);
     }} else {{
@@ -339,6 +357,11 @@ export class Pool {{
     }}
     this.idle = [];
     this.open = 0;
+    // Reject any pending waiters
+    for (const waiter of this.waiters) {{
+      waiter(null as any);
+    }}
+    this.waiters = [];
   }}
 }}
 "#,
@@ -630,7 +653,11 @@ export class {pascal}Client {{
 
     // Pipeline factory
     writeln!(out).unwrap();
-    writeln!(out, "  /** Create a pipeline for batching commands into a single round-trip. */").unwrap();
+    writeln!(
+        out,
+        "  /** Create a pipeline for batching commands into a single round-trip. */"
+    )
+    .unwrap();
     writeln!(out, "  pipeline(): Pipeline {{").unwrap();
     writeln!(out, "    return new Pipeline(this.pool);").unwrap();
     writeln!(out, "  }}").unwrap();

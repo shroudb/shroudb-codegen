@@ -38,16 +38,10 @@ impl Generator for PythonGenerator {
     }
 }
 
-fn python_type(spec: &ProtocolSpec, type_name: &str) -> &'static str {
+fn python_type(spec: &ProtocolSpec, type_name: &str) -> String {
     match spec.types.get(type_name) {
-        Some(t) => match t.python_type.as_str() {
-            "str" => "str",
-            "int" => "int",
-            "bool" => "bool",
-            "dict[str, Any]" => "dict[str, Any]",
-            _ => "Any",
-        },
-        None => "Any",
+        Some(t) => t.python_type.clone(),
+        None => "Any".to_string(),
     }
 }
 
@@ -394,7 +388,7 @@ from typing import Any, Optional
             if f.optional {
                 writeln!(out, "    {}: Optional[{py_type}] = None", f.name).unwrap();
             } else {
-                writeln!(out, "    {}: {py_type} = {}", f.name, py_default(py_type)).unwrap();
+                writeln!(out, "    {}: {py_type} = {}", f.name, py_default(&py_type)).unwrap();
             }
         }
 

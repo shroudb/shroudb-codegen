@@ -39,16 +39,30 @@ impl Generator for RubyGenerator {
     }
 }
 
-fn ruby_type(spec: &ProtocolSpec, type_name: &str) -> &'static str {
+fn ruby_type(spec: &ProtocolSpec, type_name: &str) -> String {
     match spec.types.get(type_name) {
-        Some(_) => match type_name {
-            "keyspace" | "credential_id" | "token" => "String",
-            "integer" | "unix_timestamp" => "Integer",
-            "boolean_flag" => "Boolean",
-            "json_value" => "Hash",
-            _ => "Object",
-        },
-        None => "Object",
+        Some(t) => {
+            if let Some(ref rb) = t.ruby_type {
+                rb.clone()
+            } else {
+                // Derive from rust_type when ruby_type is not explicitly set
+                ruby_type_from_rust(&t.rust_type).to_string()
+            }
+        }
+        None => "Object".to_string(),
+    }
+}
+
+/// Derive a Ruby type from a Rust type string.
+fn ruby_type_from_rust(rust_type: &str) -> &str {
+    match rust_type {
+        "String" | "&str" => "String",
+        "i64" | "u64" | "i32" | "u32" => "Integer",
+        "f64" => "Float",
+        "bool" => "Boolean",
+        "serde_json::Value" | "HashMap<String, serde_json::Value>" => "Hash",
+        "Vec<String>" => "Array<String>",
+        _ => "Object",
     }
 }
 

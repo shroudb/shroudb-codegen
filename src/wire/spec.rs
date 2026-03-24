@@ -37,6 +37,12 @@ pub struct TypeDef {
     pub rust_type: String,
     pub python_type: String,
     pub typescript_type: String,
+    /// Go type mapping. Falls back to a heuristic based on `rust_type` if not set.
+    #[serde(default)]
+    pub go_type: Option<String>,
+    /// Ruby type mapping. Falls back to a heuristic based on `rust_type` if not set.
+    #[serde(default)]
+    pub ruby_type: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

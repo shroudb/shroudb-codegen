@@ -9,9 +9,9 @@
 //! - `pipeline.go`     — pipelining support
 //! - `go.mod`          — module definition
 
-use crate::generator::{GeneratedFile, Naming};
-use super::Generator;
 use super::super::spec::{CommandDef, ProtocolSpec};
+use super::Generator;
+use crate::generator::{GeneratedFile, Naming};
 use heck::ToUpperCamelCase;
 use std::fmt::Write;
 
@@ -39,24 +39,38 @@ impl Generator for GoGenerator {
 
 fn go_type(spec: &ProtocolSpec, type_name: &str, optional: bool) -> String {
     let base = match spec.types.get(type_name) {
-        Some(_t) => match type_name {
-            "keyspace" | "credential_id" | "token" => "string",
-            "integer" | "unix_timestamp" => "int64",
-            "boolean_flag" => "bool",
-            "json_value" => "map[string]any",
-            _ => "any",
-        },
+        Some(t) => {
+            if let Some(ref go) = t.go_type {
+                go.as_str()
+            } else {
+                // Derive from rust_type when go_type is not explicitly set
+                go_type_from_rust(&t.rust_type)
+            }
+        }
         None => "any",
     };
     if optional && base != "bool" {
         match base {
-            "string" => "string".into(),
-            "int64" => "*int64".into(),
-            "map[string]any" => "map[string]any".into(),
+            "string" | "map[string]any" => base.into(),
             _ => format!("*{base}"),
         }
     } else {
         base.into()
+    }
+}
+
+/// Derive a Go type from a Rust type string.
+fn go_type_from_rust(rust_type: &str) -> &str {
+    match rust_type {
+        "String" | "&str" => "string",
+        "i64" | "u64" => "int64",
+        "i32" | "u32" => "int32",
+        "bool" => "bool",
+        "f64" => "float64",
+        "serde_json::Value" | "HashMap<String, serde_json::Value>" => "map[string]any",
+        "Vec<String>" => "[]string",
+        "Vec<u8>" => "[]byte",
+        _ => "any",
     }
 }
 
@@ -235,6 +249,7 @@ fn gen_pool(_spec: &ProtocolSpec, n: &Naming) -> GeneratedFile {
 package {snake}
 
 import (
+	"fmt"
 	"sync"
 )
 
@@ -251,6 +266,7 @@ type PoolConfig struct {{
 
 type pool struct {{
 	mu      sync.Mutex
+	cond    *sync.Cond
 	host    string
 	port    int
 	tls     bool
@@ -258,37 +274,45 @@ type pool struct {{
 	idle    []*connection
 	open    int
 	config  PoolConfig
+	closed  bool
 }}
 
 func newPool(host string, port int, useTLS bool, auth string, cfg PoolConfig) *pool {{
 	if cfg.MaxIdle <= 0 {{
 		cfg.MaxIdle = 4
 	}}
-	return &pool{{
+	p := &pool{{
 		host:   host,
 		port:   port,
 		tls:    useTLS,
 		auth:   auth,
 		config: cfg,
 	}}
+	p.cond = sync.NewCond(&p.mu)
+	return p
 }}
 
 func (p *pool) get() (*connection, error) {{
 	p.mu.Lock()
 
-	// Try to reuse an idle connection
-	if len(p.idle) > 0 {{
-		c := p.idle[len(p.idle)-1]
-		p.idle = p.idle[:len(p.idle)-1]
-		p.mu.Unlock()
-		return c, nil
-	}}
-
-	// Check max open limit
-	if p.config.MaxOpen > 0 && p.open >= p.config.MaxOpen {{
-		p.mu.Unlock()
-		// Block would be better, but keep it simple: create anyway
-		// A production pool would use a condition variable here
+	for {{
+		if p.closed {{
+			p.mu.Unlock()
+			return nil, fmt.Errorf("pool is closed")
+		}}
+		// Try to reuse an idle connection
+		if len(p.idle) > 0 {{
+			c := p.idle[len(p.idle)-1]
+			p.idle = p.idle[:len(p.idle)-1]
+			p.mu.Unlock()
+			return c, nil
+		}}
+		// Create a new connection if under the limit (or unlimited)
+		if p.config.MaxOpen == 0 || p.open < p.config.MaxOpen {{
+			break
+		}}
+		// At limit — wait for a connection to be returned
+		p.cond.Wait()
 	}}
 
 	p.open++
@@ -325,17 +349,21 @@ func (p *pool) put(c *connection) {{
 		c.close()
 		p.open--
 	}}
+	// Wake one waiter blocked in get()
+	p.cond.Signal()
 }}
 
 func (p *pool) close() {{
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
+	p.closed = true
 	for _, c := range p.idle {{
 		c.close()
 	}}
 	p.idle = nil
 	p.open = 0
+	p.cond.Broadcast()
 }}
 "#,
             pascal = n.pascal,
