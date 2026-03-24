@@ -35,11 +35,11 @@ async def main():
     try:
         # 1. Health (server-level)
         h = await client.health()
-        check("health", h.status == "OK")
+        check("health", h.state == "ready")
 
         # 2. Health (keyspace-level)
-        hk = await client.health(keyspace="test-apikeys")
-        check("health_keyspace", hk.status == "OK")
+        hk = await client.health("test-apikeys")
+        check("health_keyspace", hk.count is not None)
 
         # 3. Issue on test-apikeys
         issued = await client.issue("test-apikeys")
@@ -98,14 +98,13 @@ async def main():
 
         # 15. JWKS
         jwks = await client.jwks("test-jwt")
-        check("jwks", jwks.keys is not None and len(jwks.keys) > 0)
+        check("jwks", jwks.jwks is not None and len(jwks.jwks) > 0)
 
         # 16. KEYS (list credentials)
         keys_result = await client.keys("test-apikeys")
         check("keys", keys_result.cursor is not None)
 
-        # 17. Error: BADARG (issue with no keyspace would be a Python error,
-        #     so test with an invalid command scenario instead)
+        # 17. Error: BADARG
         try:
             await client.inspect("test-apikeys", "")
             check("error_badarg", False)
@@ -129,7 +128,7 @@ async def main():
         # 20. Subscribe
         try:
             sub_ok = False
-            # Issue a credential to trigger an event while subscribed
+
             async def subscribe_test():
                 nonlocal sub_ok
                 sub = await client.subscribe("*")

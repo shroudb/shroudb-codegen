@@ -25,11 +25,11 @@ client = Shroudb::Client.connect(uri)
 begin
   # 1. Health (server-level)
   h = client.health
-  check("health", h.status == "OK")
+  check("health", h.state == "ready")
 
   # 2. Health (keyspace-level)
-  hk = client.health(keyspace: "test-apikeys")
-  check("health_keyspace", hk.status == "OK")
+  hk = client.health("test-apikeys")
+  check("health_keyspace", !hk.count.nil?)
 
   # 3. Issue on test-apikeys
   issued = client.issue("test-apikeys")
@@ -87,7 +87,7 @@ begin
 
   # 15. JWKS
   jwks = client.jwks("test-jwt")
-  check("jwks", jwks.keys.is_a?(Array) && !jwks.keys.empty?)
+  check("jwks", jwks.jwks.is_a?(String) && !jwks.jwks.empty?)
 
   # 16. KEYS (list credentials)
   keys_result = client.keys("test-apikeys")

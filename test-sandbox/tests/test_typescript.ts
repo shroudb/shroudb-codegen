@@ -28,11 +28,11 @@ const client = await ShroudbClient.connect(uri);
 try {
   // 1. Health (server-level)
   const h = await client.health();
-  check("health", h.status === "OK");
+  check("health", h.state === "ready");
 
   // 2. Health (keyspace-level)
   const hk = await client.health("test-apikeys");
-  check("health_keyspace", hk.status === "OK");
+  check("health_keyspace", hk.count != null);
 
   // 3. Issue on test-apikeys
   const issued = await client.issue("test-apikeys");
@@ -96,7 +96,7 @@ try {
 
   // 15. JWKS
   const jwks = await client.jwks("test-jwt");
-  check("jwks", Array.isArray(jwks.keys) && jwks.keys.length > 0);
+  check("jwks", typeof jwks.jwks === "string" && jwks.jwks.length > 0);
 
   // 16. KEYS (list credentials)
   const keysResult = await client.keys("test-apikeys");
