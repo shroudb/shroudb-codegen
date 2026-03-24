@@ -423,18 +423,30 @@ func IsCode(err error, code string) bool {{
 // ─── types.go ────────────────────────────────────────────────────────────────
 
 fn gen_types(spec: &ProtocolSpec, n: &Naming) -> GeneratedFile {
+    // Check if any response field needs JSON parsing
+    let needs_json = spec.commands.values().any(|cmd| {
+        cmd.response
+            .iter()
+            .any(|f| go_type(spec, &f.field_type, false) == "map[string]any")
+    });
+
     let mut out = format!(
         r#"// {pascal} response types.
 //
 // Auto-generated from {raw} protocol spec. Do not edit.
 
 package {snake}
-
 "#,
         pascal = n.pascal,
         snake = n.snake,
         raw = n.raw,
     );
+
+    if needs_json {
+        writeln!(out, "\nimport \"encoding/json\"\n").unwrap();
+    } else {
+        writeln!(out).unwrap();
+    }
 
     for (cmd_name, cmd) in &spec.commands {
         if cmd.response.is_empty() || cmd.simple_response {
@@ -493,12 +505,13 @@ package {snake}
                     }
                 }
                 "map[string]any" => {
-                    writeln!(
-                        out,
-                        "\tif v, ok := m[\"{}\"].(map[string]any); ok {{ r.{field_name} = v }}",
-                        f.name
-                    )
-                    .unwrap();
+                    // json_value fields may arrive as map or JSON string
+                    writeln!(out, "\tswitch val := m[\"{}\"].(type) {{", f.name).unwrap();
+                    writeln!(out, "\tcase map[string]any:").unwrap();
+                    writeln!(out, "\t\tr.{field_name} = val").unwrap();
+                    writeln!(out, "\tcase string:").unwrap();
+                    writeln!(out, "\t\t_ = json.Unmarshal([]byte(val), &r.{field_name})").unwrap();
+                    writeln!(out, "\t}}").unwrap();
                 }
                 "bool" => {
                     writeln!(

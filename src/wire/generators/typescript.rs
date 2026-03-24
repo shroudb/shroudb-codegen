@@ -848,7 +848,45 @@ fn gen_ts_method(
 
     writeln!(out, "    const result = await this.execute(...args);").unwrap();
     if !cmd.simple_response && !cmd.response.is_empty() {
-        writeln!(out, "    return result as {return_type};").unwrap();
+        writeln!(out, "    const m = result as Record<string, unknown>;").unwrap();
+        writeln!(out, "    return {{").unwrap();
+        for f in &cmd.response {
+            let js_name = f.name.to_lower_camel_case();
+            let is_json = spec
+                .types
+                .get(&f.field_type)
+                .map(|t| t.typescript_type == "Record<string, unknown>")
+                .unwrap_or(false);
+            let is_num = spec
+                .types
+                .get(&f.field_type)
+                .map(|t| t.typescript_type == "number")
+                .unwrap_or(false);
+            if is_json {
+                writeln!(
+                    out,
+                    "      {js_name}: typeof m[\"{wire}\"] === \"string\" ? JSON.parse(m[\"{wire}\"] as string) : m[\"{wire}\"],",
+                    wire = f.name
+                )
+                .unwrap();
+            } else if is_num {
+                writeln!(
+                    out,
+                    "      {js_name}: m[\"{wire}\"] != null ? Number(m[\"{wire}\"]) : undefined,",
+                    wire = f.name
+                )
+                .unwrap();
+            } else {
+                writeln!(
+                    out,
+                    "      {js_name}: m[\"{wire}\"] as {ts_type},",
+                    wire = f.name,
+                    ts_type = ts_type(spec, &f.field_type),
+                )
+                .unwrap();
+            }
+        }
+        writeln!(out, "    }} as {return_type};").unwrap();
     }
     writeln!(out, "  }}").unwrap();
 }

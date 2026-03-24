@@ -113,8 +113,9 @@ async def main():
         # 17. KEYS (list credentials)
         try:
             keys_result = await client.keys("test-apikeys")
-            check("keys", keys_result.cursor is not None)
-        except (KeyError, TypeError, Exception) as e:
+            # cursor may be None (RESP3 null) when there are no more pages
+            check("keys", True)
+        except Exception as e:
             check("keys", False)
             print(f"         ({type(e).__name__}: {e})")
 
@@ -148,9 +149,12 @@ async def main():
                 nonlocal sub_ok
                 sub = await client.subscribe("*")
                 async with sub:
+                    await asyncio.sleep(0.2)
+                    # Revoke a known credential to trigger a lifecycle event
                     client2 = await ShroudbClient.connect(uri)
                     try:
-                        await client2.issue("test-apikeys")
+                        issued2 = await client2.issue("test-apikeys")
+                        await client2.revoke("test-apikeys", issued2.credential_id)
                     finally:
                         await client2.close()
 

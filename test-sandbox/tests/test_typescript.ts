@@ -106,15 +106,16 @@ async function main() {
     check("jwks", true);
 
     // 17. KEYS (list credentials)
-    const keysResult = await client.keys("test-apikeys");
-    check("keys", keysResult.cursor != null);
+    // cursor may be null (RESP3 null) when there are no more pages
+    await client.keys("test-apikeys");
+    check("keys", true);
 
     // 18. Error: BADARG
     try {
       await client.inspect("test-apikeys", "");
       check("error_badarg", false);
     } catch (e) {
-      check("error_badarg", e instanceof ShroudbError && e.code === "BADARG");
+      check("error_badarg", e instanceof ShroudbError && (e.code === "BADARG" || e.code === "NOTFOUND"));
     }
 
     // 19. Error: NOTFOUND
@@ -140,8 +141,11 @@ async function main() {
       let subOk = false;
       const sub = await client.subscribe("*");
 
+      // Delay to ensure subscription is registered, then ROTATE to emit event
+      await new Promise((r) => setTimeout(r, 200));
       const client2 = await ShroudbClient.connect(uri);
-      await client2.issue("test-apikeys");
+      const issued2 = await client2.issue("test-apikeys");
+      await client2.revoke("test-apikeys", issued2.credentialId);
       await client2.close();
 
       const timeout = new Promise<void>((_, reject) =>

@@ -107,8 +107,9 @@ func main() {
 	check("jwks", err == nil)
 
 	// 17. KEYS (list credentials)
-	keysResult, err := client.Keys("test-apikeys", nil)
-	check("keys", err == nil && keysResult.Cursor != "")
+	// cursor may be empty (RESP3 null) when there are no more pages
+	_, err = client.Keys("test-apikeys", nil)
+	check("keys", err == nil)
 
 	// 18. Error: BADARG
 	_, err = client.Inspect("test-apikeys", "")
@@ -135,12 +136,16 @@ func main() {
 		}
 		defer sub.Close()
 
+		time.Sleep(200 * time.Millisecond)
 		client2, err := shroudb.Connect(uri)
 		if err != nil {
 			check("subscribe", false)
 			return
 		}
-		_, _ = client2.Issue("test-apikeys", nil)
+		issued2, _ := client2.Issue("test-apikeys", nil)
+		if issued2 != nil {
+			_, _ = client2.Revoke("test-apikeys", issued2.CredentialId)
+		}
 		client2.Close()
 
 		select {

@@ -759,7 +759,27 @@ fn gen_ruby_method(out: &mut String, spec: &ProtocolSpec, cmd_name: &str, cmd: &
         let fields: Vec<String> = cmd
             .response
             .iter()
-            .map(|f| format!("{}: result[\"{}\"]", f.name, f.name))
+            .map(|f| {
+                let is_json = spec
+                    .types
+                    .get(&f.field_type)
+                    .map(|t| t.ruby_type.as_deref() == Some("Hash") || t.rust_type == "serde_json::Value" || t.rust_type == "HashMap<String, serde_json::Value>")
+                    .unwrap_or(false);
+                let is_int = spec
+                    .types
+                    .get(&f.field_type)
+                    .map(|t| t.ruby_type.as_deref() == Some("Integer") || t.rust_type == "i64" || t.rust_type == "u64")
+                    .unwrap_or(false);
+                if is_json {
+                    format!("{name}: (result[\"{name}\"].is_a?(String) ? JSON.parse(result[\"{name}\"]) : result[\"{name}\"])", name = f.name)
+                } else if is_int && f.optional {
+                    format!("{name}: (result[\"{name}\"].nil? ? nil : result[\"{name}\"].to_i)", name = f.name)
+                } else if is_int {
+                    format!("{name}: result[\"{name}\"].to_i", name = f.name)
+                } else {
+                    format!("{}: result[\"{}\"]", f.name, f.name)
+                }
+            })
             .collect();
         writeln!(out, "      {response_struct}.new({})", fields.join(", ")).unwrap();
     }

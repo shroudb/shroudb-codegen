@@ -95,13 +95,9 @@ begin
   check("jwks", true)
 
   # 17. KEYS (list credentials)
-  begin
-    keys_result = client.keys("test-apikeys")
-    check("keys", !keys_result.cursor.nil?)
-  rescue StandardError => e
-    check("keys", false)
-    puts "         (#{e.class}: #{e.message})"
-  end
+  # cursor may be nil (RESP3 null) when there are no more pages
+  client.keys("test-apikeys")
+  check("keys", true)
 
   # 18. Error: BADARG
   begin
@@ -130,18 +126,20 @@ begin
   begin
     sub_ok = false
     Timeout.timeout(5) do
+      t = Thread.new do
+        sleep(0.5) # ensure subscription is registered server-side
+        client2 = Shroudb::Client.connect(uri)
+        issued2 = client2.issue("test-apikeys")
+        client2.revoke("test-apikeys", issued2.credential_id)
+        client2.close
+      end
       client.subscribe("*") do |event|
-        Thread.new do
-          client2 = Shroudb::Client.connect(uri)
-          client2.issue("test-apikeys")
-          client2.close
-        end.join
-
         if event.event_type && event.keyspace
           sub_ok = true
         end
         break
       end
+      t.join
     end
     check("subscribe", sub_ok)
   rescue Timeout::Error, StandardError => e
