@@ -1,0 +1,21 @@
+[package]
+name = "shroudb-codegen"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.92"
+license = "MIT OR Apache-2.0"
+description = "Unified SDK generator for ShrouDB wire protocol and HTTP API specs"
+
+[[bin]]
+name = "shroudb-codegen"
+path = "src/main.rs"
+
+[lib]
+name = "shroudb_codegen"
+path = "src/lib.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+toml = "1"
+heck = "0.5"
