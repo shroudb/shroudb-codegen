@@ -28,7 +28,7 @@ begin
   check("health", h.state == "ready")
 
   # 2. Health (keyspace-level)
-  hk = client.health("test-apikeys")
+  hk = client.health(keyspace: "test-apikeys")
   check("health_keyspace", !hk.count.nil?)
 
   # 3. Issue on test-apikeys

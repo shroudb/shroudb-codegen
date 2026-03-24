@@ -500,8 +500,21 @@ package {snake}
                     )
                     .unwrap();
                 }
+                "bool" => {
+                    writeln!(
+                        out,
+                        "\tif v, ok := m[\"{}\"].(bool); ok {{ r.{field_name} = v }}",
+                        f.name
+                    )
+                    .unwrap();
+                }
                 _ => {
-                    writeln!(out, "\tr.{field_name} = m[\"{}\"]", f.name).unwrap();
+                    writeln!(
+                        out,
+                        "\tif v, ok := m[\"{}\"].({go_t}); ok {{ r.{field_name} = v }}",
+                        f.name
+                    )
+                    .unwrap();
                 }
             }
         }

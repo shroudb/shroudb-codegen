@@ -340,6 +340,7 @@ Auto-generated from {raw} protocol spec. Do not edit.
 """
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
@@ -376,7 +377,45 @@ from typing import Any, Optional
         .unwrap();
         writeln!(out, "        return cls(").unwrap();
         for f in &cmd.response {
-            if f.optional {
+            let is_json = spec
+                .types
+                .get(&f.field_type)
+                .map(|t| t.python_type == "dict[str, Any]")
+                .unwrap_or(false);
+            let is_int = spec
+                .types
+                .get(&f.field_type)
+                .map(|t| t.python_type == "int")
+                .unwrap_or(false);
+            if f.optional && is_json {
+                writeln!(
+                    out,
+                    "            {name} = json.loads(data[\"{name}\"]) if \"{name}\" in data else None,",
+                    name = f.name
+                )
+                .unwrap();
+            } else if is_json {
+                writeln!(
+                    out,
+                    "            {name} = json.loads(data[\"{name}\"]),",
+                    name = f.name
+                )
+                .unwrap();
+            } else if f.optional && is_int {
+                writeln!(
+                    out,
+                    "            {name} = int(data[\"{name}\"]) if \"{name}\" in data else None,",
+                    name = f.name
+                )
+                .unwrap();
+            } else if is_int {
+                writeln!(
+                    out,
+                    "            {name} = int(data[\"{name}\"]),",
+                    name = f.name
+                )
+                .unwrap();
+            } else if f.optional {
                 writeln!(out, "            {} = data.get(\"{}\"),", f.name, f.name).unwrap();
             } else {
                 writeln!(out, "            {} = data[\"{}\"],", f.name, f.name).unwrap();

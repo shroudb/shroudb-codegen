@@ -127,7 +127,7 @@ if [[ "$USE_DOCKER" == "true" ]]; then
     "$SHROUDB_IMAGE" \
     --config /config.toml)
 else
-  SHROUDB_MASTER_KEY="$MASTER_KEY" "$SHROUDB_BIN" --config "$CONFIG_FILE" &
+  SHROUDB_MASTER_KEY="$MASTER_KEY" "$SHROUDB_BIN" --config "$CONFIG_FILE" >/dev/null 2>&1 &
   SERVER_PID=$!
 fi
 
@@ -236,11 +236,10 @@ run_test() {
       (cd generated/python && python3 "$SCRIPT_DIR/tests/test_python.py") || exit_code=$?
       ;;
     typescript)
-      # Install tsx if needed, then run
-      if ! npx tsx --version &>/dev/null 2>&1; then
-        (cd generated/typescript && npm install --save-dev tsx typescript 2>&1 | tail -1)
-      fi
-      (cd generated/typescript && npx tsx "$SCRIPT_DIR/tests/test_typescript.ts") || exit_code=$?
+      # Install tsx + typescript locally in the generated package
+      (cd generated/typescript && npm install --save-dev tsx typescript 2>&1 | tail -1)
+      # Use node --import tsx/esm for top-level await support
+      (cd generated/typescript && node --import tsx/esm "$SCRIPT_DIR/tests/test_typescript.ts") || exit_code=$?
       ;;
     go)
       # Set up test binary
