@@ -4,8 +4,8 @@ pub mod python;
 pub mod ruby;
 pub mod typescript;
 
-use crate::generator::{GeneratedFile, Naming};
 use super::spec::ProtocolSpec;
+use crate::generator::{GeneratedFile, Naming};
 
 /// Trait implemented by each wire protocol language generator.
 pub trait Generator {
@@ -43,9 +43,9 @@ pub fn generators_for_lang(
             Box::new(ruby::RubyGenerator),
             Box::new(proto::ProtoGenerator),
         ]),
-        other => Err(
-            format!("Unknown language: {other}\nSupported: python, typescript, go, ruby, proto, all")
-                .into(),
-        ),
+        other => Err(format!(
+            "Unknown language: {other}\nSupported: python, typescript, go, ruby, proto, all"
+        )
+        .into()),
     }
 }
