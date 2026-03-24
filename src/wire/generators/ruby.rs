@@ -68,7 +68,7 @@ fn gen_main(spec: &ProtocolSpec, n: &Naming) -> GeneratedFile {
     let scheme = n
         .uri_schemes
         .first()
-        .map(|s| s.as_str())
+        .map(|s| s.trim_end_matches("://"))
         .unwrap_or(&n.snake);
     GeneratedFile {
         path: format!("lib/{}.rb", n.snake),
@@ -511,9 +511,9 @@ fn gen_client(spec: &ProtocolSpec, n: &Naming) -> GeneratedFile {
     let scheme = n
         .uri_schemes
         .first()
-        .map(|s| s.as_str())
+        .map(|s| s.trim_end_matches("://"))
         .unwrap_or(&n.snake);
-    let scheme_tls = format!("{}+tls", scheme);
+    let scheme_tls = format!("{scheme}+tls");
     let mut out = format!(
         r#"# frozen_string_literal: true
 
@@ -1033,7 +1033,7 @@ fn gen_gemspec(spec: &ProtocolSpec, n: &Naming) -> GeneratedFile {
     let scheme = n
         .uri_schemes
         .first()
-        .map(|s| s.as_str())
+        .map(|s| s.trim_end_matches("://"))
         .unwrap_or(&n.snake);
     GeneratedFile {
         path: format!("{}.gemspec", n.kebab),
@@ -1064,9 +1064,9 @@ fn gen_readme(spec: &ProtocolSpec, n: &Naming) -> GeneratedFile {
     let scheme = n
         .uri_schemes
         .first()
-        .map(|s| s.as_str())
+        .map(|s| s.trim_end_matches("://"))
         .unwrap_or(&n.snake);
-    let scheme_tls = format!("{}+tls", scheme);
+    let scheme_tls = format!("{scheme}+tls");
     let mut cmds = String::new();
     for (cmd_name, cmd) in &spec.commands {
         if cmd.streaming {
