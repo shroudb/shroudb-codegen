@@ -43,6 +43,9 @@ echo "=== Protocol spec: $SPEC ==="
 # ── Locate shroudb binary ──────────────────────────────────────────────────
 
 SHROUDB_BIN=""
+USE_DOCKER=false
+SHROUDB_IMAGE="ghcr.io/shroudb/shroudb:latest"
+
 if command -v shroudb &>/dev/null; then
   SHROUDB_BIN="$(command -v shroudb)"
 elif [[ -n "$SHROUDB_DIR" ]]; then
@@ -64,13 +67,19 @@ elif [[ -n "$SHROUDB_DIR" ]]; then
   fi
 fi
 
+# Fall back to Docker if no local binary
 if [[ -z "$SHROUDB_BIN" || ! -x "$SHROUDB_BIN" ]]; then
-  echo "ERROR: Cannot find shroudb binary."
-  echo "  Install it on \$PATH, or ensure ../../shroudb/ exists with a Cargo workspace."
-  exit 1
+  if command -v docker &>/dev/null; then
+    echo "=== No local binary found, using Docker image: $SHROUDB_IMAGE ==="
+    USE_DOCKER=true
+  else
+    echo "ERROR: Cannot find shroudb binary or Docker."
+    echo "  Install shroudb on \$PATH, ensure ../../shroudb/ exists, or install Docker."
+    exit 1
+  fi
+else
+  echo "=== Using shroudb: $SHROUDB_BIN ==="
 fi
-
-echo "=== Using shroudb: $SHROUDB_BIN ==="
 
 # ── Run codegen ─────────────────────────────────────────────────────────────
 
@@ -94,6 +103,8 @@ PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); pr
 
 DATA_DIR="$(mktemp -d)"
 CONFIG_FILE="$DATA_DIR/config.toml"
+CONTAINER_ID=""
+SERVER_PID=""
 
 # Write config from template
 sed -e "s|{{PORT}}|$PORT|g" -e "s|{{DATA_DIR}}|$DATA_DIR|g" \
@@ -101,13 +112,32 @@ sed -e "s|{{PORT}}|$PORT|g" -e "s|{{DATA_DIR}}|$DATA_DIR|g" \
 
 echo "=== Starting ShrouDB server (port $PORT) ==="
 
-"$SHROUDB_BIN" --config "$CONFIG_FILE" &
-SERVER_PID=$!
+if [[ "$USE_DOCKER" == "true" ]]; then
+  # Docker needs internal bind on 0.0.0.0:6399, port-mapped to host
+  DOCKER_CONFIG="$DATA_DIR/docker-config.toml"
+  sed -e "s|{{PORT}}|6399|g" -e "s|{{DATA_DIR}}|/data|g" -e "s|127.0.0.1|0.0.0.0|g" \
+    "$SCRIPT_DIR/test-config.toml" > "$DOCKER_CONFIG"
+
+  CONTAINER_ID=$(docker run -d --rm \
+    -p "127.0.0.1:$PORT:6399" \
+    -e "SHROUDB_MASTER_KEY=$MASTER_KEY" \
+    -e "LOG_LEVEL=warn" \
+    -v "$DOCKER_CONFIG:/config.toml:ro" \
+    --tmpfs /data \
+    "$SHROUDB_IMAGE" \
+    --config /config.toml)
+else
+  SHROUDB_MASTER_KEY="$MASTER_KEY" "$SHROUDB_BIN" --config "$CONFIG_FILE" &
+  SERVER_PID=$!
+fi
 
 cleanup() {
   if [[ -n "${SERVER_PID:-}" ]]; then
     kill "$SERVER_PID" 2>/dev/null || true
     wait "$SERVER_PID" 2>/dev/null || true
+  fi
+  if [[ -n "${CONTAINER_ID:-}" ]]; then
+    docker stop "$CONTAINER_ID" >/dev/null 2>&1 || true
   fi
   rm -rf "$DATA_DIR"
 }
@@ -131,7 +161,11 @@ if [[ "$READY" != "true" ]]; then
   exit 1
 fi
 
-echo "Server ready (PID $SERVER_PID)."
+if [[ "$USE_DOCKER" == "true" ]]; then
+  echo "Server ready (container ${CONTAINER_ID:0:12})."
+else
+  echo "Server ready (PID $SERVER_PID)."
+fi
 echo ""
 
 export SHROUDB_TEST_URI="shroudb://127.0.0.1:$PORT"
