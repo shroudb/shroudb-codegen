@@ -10,8 +10,8 @@
 //! - `README.md`       — quick usage docs
 
 use super::super::spec::{ApiSpec, EndpointDef, FieldDef};
-use heck::ToLowerCamelCase;
 use crate::generator::{GeneratedFile, Naming};
+use heck::ToLowerCamelCase;
 use std::fmt::Write;
 
 use super::HttpGenerator;
@@ -74,9 +74,7 @@ fn ts_path_expr(ep: &EndpointDef) -> String {
 
 /// Header comment placed atop every generated file.
 fn file_header(pascal: &str) -> String {
-    format!(
-        "// {pascal} TypeScript client — auto-generated from API spec. Do not edit.\n"
-    )
+    format!("// {pascal} TypeScript client — auto-generated from API spec. Do not edit.\n")
 }
 
 // ─── src/errors.ts ──────────────────────────────────────────────────────────
@@ -123,7 +121,7 @@ export class {pascal}Error extends Error {{
     );
 
     // One case per error code
-    for (code, _def) in &spec.error_codes {
+    for code in spec.error_codes.keys() {
         use heck::ToPascalCase;
         let class = format!("{}Error", code.to_pascal_case());
         let _ = writeln!(
@@ -204,7 +202,11 @@ fn gen_client(spec: &ApiSpec, n: &Naming) -> GeneratedFile {
     let _ = write!(s, "{}", file_header(&n.pascal));
 
     // Imports
-    let _ = writeln!(s, "import {{ {pascal}Error }} from \"./errors\";", pascal = n.pascal);
+    let _ = writeln!(
+        s,
+        "import {{ {pascal}Error }} from \"./errors\";",
+        pascal = n.pascal
+    );
 
     // Collect response interface names that we actually emit
     let response_imports: Vec<String> = spec
@@ -331,7 +333,11 @@ fn gen_options_interfaces(spec: &ApiSpec, s: &mut String) {
         }
         use heck::ToPascalCase;
         let iface = format!("{}Options", ep_name.to_pascal_case());
-        let _ = writeln!(s, "/** Optional parameters for `{method}`. */", method = ts_method(ep_name));
+        let _ = writeln!(
+            s,
+            "/** Optional parameters for `{method}`. */",
+            method = ts_method(ep_name)
+        );
         let _ = writeln!(s, "export interface {iface} {{");
         for (field_name, field) in &optional {
             let ty = ts_type(field);
@@ -465,8 +471,16 @@ fn gen_index(spec: &ApiSpec, n: &Naming) -> GeneratedFile {
     let mut s = String::with_capacity(1024);
     let _ = write!(s, "{}", file_header(&n.pascal));
     let _ = writeln!(s);
-    let _ = writeln!(s, "export {{ {pascal}Client }} from \"./client\";", pascal = n.pascal);
-    let _ = writeln!(s, "export {{ {pascal}Error }} from \"./errors\";", pascal = n.pascal);
+    let _ = writeln!(
+        s,
+        "export {{ {pascal}Client }} from \"./client\";",
+        pascal = n.pascal
+    );
+    let _ = writeln!(
+        s,
+        "export {{ {pascal}Error }} from \"./errors\";",
+        pascal = n.pascal
+    );
 
     // Re-export error subclasses
     let mut error_classes: Vec<String> = Vec::new();
@@ -594,10 +608,18 @@ fn gen_readme(spec: &ApiSpec, n: &Naming) -> GeneratedFile {
 
     let _ = writeln!(s, "# {npm_name}\n", npm_name = n.npm_name);
     let _ = writeln!(s, "{description}\n", description = n.description);
-    let _ = writeln!(s, "> Auto-generated from the {raw} API spec. Do not edit.\n", raw = n.raw);
+    let _ = writeln!(
+        s,
+        "> Auto-generated from the {raw} API spec. Do not edit.\n",
+        raw = n.raw
+    );
 
     let _ = writeln!(s, "## Installation\n");
-    let _ = writeln!(s, "```bash\nnpm install {npm_name}\n```\n", npm_name = n.npm_name);
+    let _ = writeln!(
+        s,
+        "```bash\nnpm install {npm_name}\n```\n",
+        npm_name = n.npm_name
+    );
 
     let _ = writeln!(s, "## Quick Start\n");
     let _ = writeln!(s, "```typescript");

@@ -1,7 +1,10 @@
 //! Shared generator types and output utilities.
 
-use heck::{ToLowerCamelCase, ToPascalCase, ToSnakeCase};
+use heck::{ToKebabCase, ToLowerCamelCase, ToPascalCase, ToSnakeCase};
 use std::path::Path;
+
+/// Result type returned by top-level generate functions.
+pub type GenerateResult = Result<Vec<(String, Vec<GeneratedFile>)>, Box<dyn std::error::Error>>;
 
 /// A named output file produced by a generator.
 pub struct GeneratedFile {
@@ -42,7 +45,7 @@ impl Naming {
         let snake = raw.to_snake_case();
         let pascal = raw.to_pascal_case();
         let camel = raw.to_lower_camel_case();
-        let kebab = raw.clone();
+        let kebab = raw.to_kebab_case();
         let npm_name = format!("{kebab}-client");
         let go_module = format!("github.com/shroudb/{kebab}-go");
 

@@ -6,12 +6,9 @@
 pub mod generators;
 pub mod spec;
 
-use crate::generator::GeneratedFile;
+use crate::generator::GenerateResult;
 
 /// Generate HTTP client SDK files from an API spec.
-pub fn generate(
-    spec_text: &str,
-    lang: &str,
-) -> Result<Vec<(String, Vec<GeneratedFile>)>, Box<dyn std::error::Error>> {
+pub fn generate(spec_text: &str, lang: &str) -> GenerateResult {
     generators::generate(spec_text, lang)
 }

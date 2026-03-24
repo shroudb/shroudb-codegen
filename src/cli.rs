@@ -1,6 +1,6 @@
 //! Shared CLI argument parsing and codegen runner.
 
-use crate::generator::{GeneratedFile, write_output};
+use crate::generator::{GenerateResult, write_output};
 use clap::Args;
 use std::path::PathBuf;
 
@@ -29,10 +29,7 @@ pub struct CodegenCli {
 /// Run the codegen pipeline.
 ///
 /// `generate` takes `(spec_text, lang)` and returns `Vec<(language_name, files)>`.
-pub fn run(
-    cli: &CodegenCli,
-    generate: impl Fn(&str, &str) -> Result<Vec<(String, Vec<GeneratedFile>)>, Box<dyn std::error::Error>>,
-) {
+pub fn run(cli: &CodegenCli, generate: impl Fn(&str, &str) -> GenerateResult) {
     let spec_text = std::fs::read_to_string(&cli.spec).unwrap_or_else(|e| {
         eprintln!("Error reading spec file {:?}: {e}", cli.spec);
         std::process::exit(1);

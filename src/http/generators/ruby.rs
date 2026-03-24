@@ -9,8 +9,8 @@
 //! - `README.md`               — quick usage docs
 
 use super::super::spec::{ApiSpec, EndpointDef};
-use heck::{ToPascalCase, ToSnakeCase};
 use crate::generator::{GeneratedFile, Naming};
+use heck::{ToPascalCase, ToSnakeCase};
 use std::fmt::Write;
 
 use super::HttpGenerator;
@@ -142,8 +142,17 @@ fn gen_client(spec: &ApiSpec, n: &Naming) -> GeneratedFile {
     // Constructor
     writeln!(s, "    # Create a new {} client.", n.pascal).unwrap();
     writeln!(s, "    #").unwrap();
-    writeln!(s, "    # @param base_url [String] Base URL of the {} server", n.raw).unwrap();
-    writeln!(s, "    # @param keyspace [String, nil] Default keyspace for endpoints that require one").unwrap();
+    writeln!(
+        s,
+        "    # @param base_url [String] Base URL of the {} server",
+        n.raw
+    )
+    .unwrap();
+    writeln!(
+        s,
+        "    # @param keyspace [String, nil] Default keyspace for endpoints that require one"
+    )
+    .unwrap();
     writeln!(s, "    def initialize(base_url:, keyspace: nil)").unwrap();
     writeln!(s, "      @base_url = base_url.chomp(\"/\")").unwrap();
     writeln!(s, "      @keyspace = keyspace").unwrap();
@@ -208,7 +217,12 @@ fn gen_client(spec: &ApiSpec, n: &Naming) -> GeneratedFile {
                 writeln!(s, "      body[\"{}\"] = {}", name, name).unwrap();
             }
             for (name, _field) in ep.optional_body() {
-                writeln!(s, "      body[\"{}\"] = {} unless {}.nil?", name, name, name).unwrap();
+                writeln!(
+                    s,
+                    "      body[\"{}\"] = {} unless {}.nil?",
+                    name, name, name
+                )
+                .unwrap();
             }
             writeln!(s).unwrap();
         }
@@ -268,11 +282,7 @@ fn gen_client(spec: &ApiSpec, n: &Naming) -> GeneratedFile {
     writeln!(s, "      req = case method").unwrap();
     writeln!(s, "            when \"GET\"  then Net::HTTP::Get.new(uri)").unwrap();
     writeln!(s, "            when \"POST\" then Net::HTTP::Post.new(uri)").unwrap();
-    writeln!(
-        s,
-        "            when \"PUT\"  then Net::HTTP::Put.new(uri)"
-    )
-    .unwrap();
+    writeln!(s, "            when \"PUT\"  then Net::HTTP::Put.new(uri)").unwrap();
     writeln!(
         s,
         "            when \"DELETE\" then Net::HTTP::Delete.new(uri)"
@@ -319,16 +329,8 @@ fn gen_client(spec: &ApiSpec, n: &Naming) -> GeneratedFile {
     writeln!(s, "      data = JSON.parse(response.body) rescue {{}}").unwrap();
     writeln!(s).unwrap();
     writeln!(s, "      unless response.is_a?(Net::HTTPSuccess)").unwrap();
-    writeln!(
-        s,
-        "        code = data[\"error\"] || \"UNKNOWN\""
-    )
-    .unwrap();
-    writeln!(
-        s,
-        "        detail = data[\"detail\"] || response.message"
-    )
-    .unwrap();
+    writeln!(s, "        code = data[\"error\"] || \"UNKNOWN\"").unwrap();
+    writeln!(s, "        detail = data[\"detail\"] || response.message").unwrap();
     writeln!(s, "        raise Error.from_code(code, detail)").unwrap();
     writeln!(s, "      end").unwrap();
     writeln!(s).unwrap();
@@ -361,11 +363,7 @@ fn gen_errors(spec: &ApiSpec, n: &Naming) -> GeneratedFile {
     writeln!(s, "    def initialize(code, detail = nil)").unwrap();
     writeln!(s, "      @code = code").unwrap();
     writeln!(s, "      @detail = detail").unwrap();
-    writeln!(
-        s,
-        "      super(detail || code)"
-    )
-    .unwrap();
+    writeln!(s, "      super(detail || code)").unwrap();
     writeln!(s, "    end").unwrap();
     writeln!(s).unwrap();
 
@@ -387,7 +385,7 @@ fn gen_errors(spec: &ApiSpec, n: &Naming) -> GeneratedFile {
 
     // Error map constant
     writeln!(s, "  ERROR_MAP = {{").unwrap();
-    for (code, _def) in &spec.error_codes {
+    for code in spec.error_codes.keys() {
         let class_name = format!("{}Error", code.to_pascal_case());
         writeln!(s, "    \"{}\" => {},", code, class_name).unwrap();
     }
@@ -419,7 +417,12 @@ fn gen_types(spec: &ApiSpec, n: &Naming) -> GeneratedFile {
         let required = ep.required_response();
         let optional = ep.optional_response();
 
-        writeln!(s, "  # Response type for the {} endpoint.", ep_name.to_snake_case()).unwrap();
+        writeln!(
+            s,
+            "  # Response type for the {} endpoint.",
+            ep_name.to_snake_case()
+        )
+        .unwrap();
         writeln!(s, "  # {}", ep.description).unwrap();
 
         // Collect all field names for the Struct
@@ -486,11 +489,7 @@ fn gen_gemspec(spec: &ApiSpec, n: &Naming) -> GeneratedFile {
     .unwrap();
     writeln!(s, "  spec.license       = \"MIT\"").unwrap();
     writeln!(s).unwrap();
-    writeln!(
-        s,
-        "  spec.required_ruby_version = \">= 2.7.0\""
-    )
-    .unwrap();
+    writeln!(s, "  spec.required_ruby_version = \">= 2.7.0\"").unwrap();
     writeln!(s).unwrap();
     writeln!(
         s,
@@ -515,7 +514,12 @@ fn gen_readme(spec: &ApiSpec, n: &Naming) -> GeneratedFile {
     writeln!(s).unwrap();
     writeln!(s, "Ruby client for the {} HTTP API.", n.pascal).unwrap();
     writeln!(s).unwrap();
-    writeln!(s, "**Auto-generated from the {} API spec. Do not edit.**", n.raw).unwrap();
+    writeln!(
+        s,
+        "**Auto-generated from the {} API spec. Do not edit.**",
+        n.raw
+    )
+    .unwrap();
     writeln!(s).unwrap();
     writeln!(s, "## Installation").unwrap();
     writeln!(s).unwrap();
@@ -560,13 +564,7 @@ fn gen_readme(spec: &ApiSpec, n: &Naming) -> GeneratedFile {
             };
             args.push(format!("{}: {}", name, example_val));
         }
-        writeln!(
-            s,
-            "result = client.{}({})",
-            method_name,
-            args.join(", ")
-        )
-        .unwrap();
+        writeln!(s, "result = client.{}({})", method_name, args.join(", ")).unwrap();
         writeln!(s, "puts result.access_token").unwrap();
         shown_example = true;
     }
@@ -582,15 +580,16 @@ fn gen_readme(spec: &ApiSpec, n: &Naming) -> GeneratedFile {
     writeln!(s).unwrap();
     writeln!(s, "## Error Handling").unwrap();
     writeln!(s).unwrap();
-    writeln!(s, "All API errors raise `{}::Error` (or a specific subclass):", n.pascal).unwrap();
+    writeln!(
+        s,
+        "All API errors raise `{}::Error` (or a specific subclass):",
+        n.pascal
+    )
+    .unwrap();
     writeln!(s).unwrap();
     writeln!(s, "```ruby").unwrap();
     writeln!(s, "begin").unwrap();
-    writeln!(
-        s,
-        "  client.login(user_id: \"alice\", password: \"wrong\")"
-    )
-    .unwrap();
+    writeln!(s, "  client.login(user_id: \"alice\", password: \"wrong\")").unwrap();
     writeln!(s, "rescue {}::Error => e", n.pascal).unwrap();
     writeln!(s, "  puts e.code   # => \"UNAUTHORIZED\"").unwrap();
     writeln!(s, "  puts e.detail # => \"invalid credentials\"").unwrap();
