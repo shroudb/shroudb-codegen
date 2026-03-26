@@ -2,6 +2,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 
@@ -34,19 +35,24 @@ func main() {
 	defer client.Close()
 
 	// 1. Health
-	err = client.Health("")
+	err = client.Health()
 	check("health", err == nil)
 
-	// 2. INGEST (push a test event)
-	err = client.Ingest(&shroudb_pulse.IngestRequest{
-		Source:    "test-source",
-		EventType: "test.event",
-		Data:      map[string]interface{}{"message": "hello from integration test"},
-	})
+	// 2. INGEST (push a test event as JSON string)
+	eventPayload := map[string]interface{}{
+		"product":     "auth",
+		"operation":   "LOGIN",
+		"resource":    "user:testuser",
+		"result":      "ok",
+		"actor":       "testuser",
+		"duration_ms": 42,
+	}
+	eventJSON, _ := json.Marshal(eventPayload)
+	_, err = client.Ingest(string(eventJSON))
 	check("ingest", err == nil)
 
-	// 3. QUERY (retrieve the event)
-	_, err = client.Query(&shroudb_pulse.QueryOptions{Source: "test-source"})
+	// 3. QUERY (retrieve events)
+	_, err = client.Query()
 	check("query", err == nil)
 
 	// 4. COUNT
@@ -58,7 +64,7 @@ func main() {
 	check("source_list", err == nil)
 
 	// 6. SOURCE_STATUS
-	_, err = client.SourceStatus("test-source")
+	_, err = client.SourceStatus()
 	check("source_status", err == nil)
 
 	check("close", true)

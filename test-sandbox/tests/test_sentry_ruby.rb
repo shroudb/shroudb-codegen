@@ -1,5 +1,6 @@
 # ShrouDB Sentry Ruby client integration test.
 
+require "json"
 require "shroudb_sentry"
 
 $passed = 0
@@ -31,13 +32,14 @@ begin
     check("policy_list", true)
   end
 
-  # 3. EVALUATE
+  # 3. EVALUATE (pass JSON string)
   begin
-    client.evaluate(
-      principal: { "role" => "admin" },
-      resource: { "type" => "document" },
-      action: { "name" => "read" }
-    )
+    eval_json = JSON.generate({
+      "principal" => { "id" => "user-1", "roles" => ["admin"] },
+      "resource" => { "id" => "doc-1", "type" => "document" },
+      "action" => "read"
+    })
+    client.evaluate(eval_json)
     check("evaluate", true)
   rescue KeyError, NoMethodError
     check("evaluate", true)

@@ -37,7 +37,7 @@ func main() {
 	defer client.Close()
 
 	// 1. Health
-	err = client.Health("")
+	err = client.Health()
 	check("health", err == nil)
 
 	// 2. TEMPLATE_LIST

@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 
 	shroudb_auth "github.com/shroudb/shroudb-auth-go"
@@ -21,13 +22,34 @@ func check(name string, condition bool) {
 	}
 }
 
+// contentTypeTransport ensures Content-Type: application/json is set on all POST requests.
+// The server requires it even for bodyless POST endpoints (refresh, logout).
+type contentTypeTransport struct {
+	base http.RoundTripper
+}
+
+func (t *contentTypeTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if req.Method == "POST" && req.Header.Get("Content-Type") == "" {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	return t.base.RoundTrip(req)
+}
+
 func main() {
 	baseURL := os.Getenv("SHROUDB_AUTH_TEST_URL")
 	if baseURL == "" {
 		baseURL = "http://127.0.0.1:4001"
 	}
 
-	client := shroudb_auth.NewClient(baseURL, shroudb_auth.WithKeyspace("default"))
+	httpClient := &http.Client{
+		Transport: &contentTypeTransport{base: http.DefaultTransport},
+	}
+
+	client := shroudb_auth.NewClient(
+		baseURL,
+		shroudb_auth.WithKeyspace("default"),
+		shroudb_auth.WithHTTPClient(httpClient),
+	)
 	ctx := context.Background()
 
 	// 1. Health

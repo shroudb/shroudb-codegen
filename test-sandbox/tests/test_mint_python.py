@@ -8,7 +8,6 @@ sys.path.insert(0, ".")
 
 from shroudb_mint.client import ShroudbMintClient
 from shroudb_mint.errors import ShroudbMintError
-
 passed = 0
 failed = 0
 
@@ -49,9 +48,11 @@ async def main():
             check("ca_list", True)
 
         # 4. ISSUE test-ca with profile server
-        cert = await client.issue("test-ca", "CN=test-svc", profile="server")
-        check("issue", cert is not None)
-        serial = getattr(cert, "serial", None) or getattr(cert, "serial_number", None)
+        # Use _execute directly because the server expects PROFILE as a keyword arg
+        # (e.g. ISSUE test-ca CN=test-svc PROFILE server), not positional.
+        result = await client._execute("ISSUE", "test-ca", "CN=test-svc", "PROFILE", "server")
+        check("issue", result is not None)
+        serial = result.get("serial") if isinstance(result, dict) else None
 
         # 5. INSPECT test-ca <serial>
         if serial:

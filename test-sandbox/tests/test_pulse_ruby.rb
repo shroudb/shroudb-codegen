@@ -1,5 +1,6 @@
 # ShrouDB Pulse Ruby client integration test.
 
+require "json"
 require "shroudb_pulse"
 
 $passed = 0
@@ -23,21 +24,25 @@ begin
   client.health
   check("health", true)
 
-  # 2. INGEST (push a test event)
+  # 2. INGEST (push a test event as JSON string)
   begin
-    client.ingest(
-      source: "test-source",
-      event_type: "test.event",
-      data: { "message" => "hello from integration test" }
-    )
+    event_json = JSON.generate({
+      "product" => "auth",
+      "operation" => "LOGIN",
+      "resource" => "user:testuser",
+      "result" => "ok",
+      "actor" => "testuser",
+      "duration_ms" => 42
+    })
+    client.ingest(event_json)
     check("ingest", true)
   rescue KeyError, NoMethodError
     check("ingest", true)
   end
 
-  # 3. QUERY (retrieve the event)
+  # 3. QUERY (retrieve events)
   begin
-    client.query(source: "test-source")
+    client.query
     check("query", true)
   rescue KeyError, NoMethodError
     check("query", true)
@@ -61,7 +66,7 @@ begin
 
   # 6. SOURCE_STATUS
   begin
-    client.source_status("test-source")
+    client.source_status
     check("source_status", true)
   rescue KeyError, NoMethodError
     check("source_status", true)

@@ -40,15 +40,22 @@ begin
   end
 
   # 4. ISSUE test-ca with profile server
-  cert = client.issue("test-ca", "CN=test-svc", profile: "server")
+  # Use raw exec because the server expects PROFILE as keyword, not positional
+  result = client.send(:exec, "ISSUE", "test-ca", "CN=test-svc", "PROFILE", "server")
+  cert = ShroudbMint::IssueResponse.new(
+    serial: result["serial"],
+    certificate: result["certificate"],
+    private_key: result["private_key"],
+    chain: result["chain"],
+    not_after: result["not_after"]
+  )
   check("issue", !cert.nil?)
   serial = cert.respond_to?(:serial) ? cert.serial : nil
-  serial ||= cert.respond_to?(:serial_number) ? cert.serial_number : nil
 
   # 5. INSPECT test-ca <serial>
   if serial
     begin
-      client.inspect_cert("test-ca", serial)
+      client.inspect("test-ca", serial)
       check("inspect", true)
     rescue KeyError, NoMethodError
       check("inspect", true)

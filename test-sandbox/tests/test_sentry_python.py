@@ -1,6 +1,7 @@
 """ShrouDB Sentry Python client integration test."""
 
 import asyncio
+import json
 import os
 import sys
 
@@ -41,13 +42,14 @@ async def main():
         except (KeyError, AttributeError):
             check("policy_list", True)
 
-        # 3. EVALUATE (should get deny or permit based on test policy)
+        # 3. EVALUATE (pass JSON string matching EvaluationRequest schema)
         try:
-            result = await client.evaluate(
-                principal={"role": "admin"},
-                resource={"type": "document"},
-                action={"name": "read"},
-            )
+            eval_json = json.dumps({
+                "principal": {"id": "user-1", "roles": ["admin"]},
+                "resource": {"id": "doc-1", "type": "document"},
+                "action": "read",
+            })
+            result = await client.evaluate(eval_json)
             check("evaluate", True)
         except (KeyError, AttributeError):
             check("evaluate", True)

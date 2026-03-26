@@ -9,6 +9,8 @@ sys.path.insert(0, ".")
 from shroudb_auth.client import ShroudbAuthClient
 from shroudb_auth.errors import ShroudbAuthError
 
+import httpx
+
 passed = 0
 failed = 0
 
@@ -26,6 +28,12 @@ def check(name, condition):
 async def main():
     base_url = os.environ.get("SHROUDB_AUTH_TEST_URL", "http://127.0.0.1:4001")
     client = ShroudbAuthClient(base_url, keyspace="default")
+
+    # Ensure Content-Type is always sent (server requires it for all POST endpoints)
+    client._http = httpx.AsyncClient(
+        timeout=30.0,
+        headers={"Content-Type": "application/json"},
+    )
 
     try:
         # 1. Health

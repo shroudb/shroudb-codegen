@@ -28,13 +28,17 @@ async function main(): Promise<void> {
     await client.health();
     check("health", true);
 
-    // 2. INGEST (push a test event)
+    // 2. INGEST (push a test event as JSON string)
     try {
-      await client.ingest({
-        source: "test-source",
-        eventType: "test.event",
-        data: { message: "hello from integration test" },
+      const eventJson = JSON.stringify({
+        product: "auth",
+        operation: "LOGIN",
+        resource: "user:testuser",
+        result: "ok",
+        actor: "testuser",
+        duration_ms: 42,
       });
+      await client.ingest(eventJson);
       check("ingest", true);
     } catch (e: unknown) {
       if (e instanceof TypeError || (e instanceof Error && e.message.includes("key"))) {
@@ -44,9 +48,9 @@ async function main(): Promise<void> {
       }
     }
 
-    // 3. QUERY (retrieve the event)
+    // 3. QUERY (retrieve events)
     try {
-      await client.query({ source: "test-source" });
+      await client.query();
       check("query", true);
     } catch (e: unknown) {
       if (e instanceof TypeError || (e instanceof Error && e.message.includes("key"))) {
@@ -82,7 +86,7 @@ async function main(): Promise<void> {
 
     // 6. SOURCE_STATUS
     try {
-      await client.sourceStatus("test-source");
+      await client.sourceStatus();
       check("source_status", true);
     } catch (e: unknown) {
       if (e instanceof TypeError || (e instanceof Error && e.message.includes("key"))) {

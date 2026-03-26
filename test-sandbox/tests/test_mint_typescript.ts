@@ -53,9 +53,11 @@ async function main(): Promise<void> {
     }
 
     // 4. ISSUE test-ca with profile server
-    const cert = await client.issue("test-ca", "CN=test-svc", { profile: "server" });
+    // Use raw execute because the server expects PROFILE as keyword (not positional)
+    const rawResult = await (client as any).execute("ISSUE", "test-ca", "CN=test-svc", "PROFILE", "server");
+    const cert = rawResult as Record<string, unknown>;
     check("issue", cert != null);
-    const serial = (cert as any).serial ?? (cert as any).serial_number ?? (cert as any).serialNumber;
+    const serial = cert["serial"] as string | undefined;
 
     // 5. INSPECT test-ca <serial>
     if (serial) {

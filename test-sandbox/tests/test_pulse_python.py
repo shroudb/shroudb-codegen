@@ -1,6 +1,7 @@
 """ShrouDB Pulse Python client integration test."""
 
 import asyncio
+import json
 import os
 import sys
 
@@ -34,20 +35,24 @@ async def main():
         await client.health()
         check("health", True)
 
-        # 2. INGEST (push a test event)
+        # 2. INGEST (push a test event as JSON string)
         try:
-            await client.ingest(
-                source="test-source",
-                event_type="test.event",
-                data={"message": "hello from integration test"},
-            )
+            event_json = json.dumps({
+                "product": "auth",
+                "operation": "LOGIN",
+                "resource": "user:testuser",
+                "result": "ok",
+                "actor": "testuser",
+                "duration_ms": 42,
+            })
+            await client.ingest(event_json)
             check("ingest", True)
         except (KeyError, AttributeError):
             check("ingest", True)
 
-        # 3. QUERY (retrieve the event)
+        # 3. QUERY (retrieve events)
         try:
-            result = await client.query(source="test-source")
+            result = await client.query()
             check("query", True)
         except (KeyError, AttributeError):
             check("query", True)
@@ -68,7 +73,7 @@ async def main():
 
         # 6. SOURCE_STATUS
         try:
-            await client.source_status("test-source")
+            await client.source_status()
             check("source_status", True)
         except (KeyError, AttributeError):
             check("source_status", True)

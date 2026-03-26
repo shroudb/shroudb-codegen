@@ -40,13 +40,14 @@ async function main(): Promise<void> {
       }
     }
 
-    // 3. EVALUATE
+    // 3. EVALUATE (pass JSON string)
     try {
-      await client.evaluate({
-        principal: { role: "admin" },
-        resource: { type: "document" },
-        action: { name: "read" },
+      const evalJson = JSON.stringify({
+        principal: { id: "user-1", roles: ["admin"] },
+        resource: { id: "doc-1", type: "document" },
+        action: "read",
       });
+      await client.evaluate(evalJson);
       check("evaluate", true);
     } catch (e: unknown) {
       if (e instanceof TypeError || (e instanceof Error && e.message.includes("key"))) {

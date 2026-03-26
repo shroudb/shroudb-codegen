@@ -24,31 +24,31 @@ begin
   client.health
   check("health", true)
 
-  # 2. PUT db/test/secret
+  # 2. PUT db/test/secret-rb
   value = Base64.strict_encode64("my-secret-value")
-  client.put("db/test/secret", value)
+  client.put("db/test/secret-rb", value)
   check("put", true)
 
-  # 3. GET db/test/secret
-  result = client.get("db/test/secret")
+  # 3. GET db/test/secret-rb
+  result = client.get("db/test/secret-rb")
   check("get", !result.nil?)
 
-  # 4. PUT db/test/secret (version 2)
+  # 4. PUT db/test/secret-rb (version 2)
   value2 = Base64.strict_encode64("my-updated-secret")
-  client.put("db/test/secret", value2)
+  client.put("db/test/secret-rb", value2)
   check("put_v2", true)
 
-  # 5. GET db/test/secret VERSION 1
+  # 5. GET db/test/secret-rb VERSION 1
   begin
-    result_v1 = client.get("db/test/secret", version: 1)
+    result_v1 = client.get("db/test/secret-rb", version: 1)
     check("get_v1", !result_v1.nil?)
   rescue KeyError, NoMethodError
     check("get_v1", true)
   end
 
-  # 6. VERSIONS db/test/secret
+  # 6. VERSIONS db/test/secret-rb
   begin
-    client.versions("db/test/secret")
+    client.versions("db/test/secret-rb")
     check("versions", true)
   rescue KeyError, NoMethodError
     check("versions", true)
@@ -56,19 +56,19 @@ begin
 
   # 7. LIST db/
   begin
-    client.list("db/")
+    client.list(prefix: "db/")
     check("list", true)
   rescue KeyError, NoMethodError
     check("list", true)
   end
 
-  # 8. DELETE db/test/secret
-  client.delete("db/test/secret")
+  # 8. DELETE db/test/secret-rb
+  client.delete("db/test/secret-rb")
   check("delete", true)
 
-  # 9. Error: GET db/test/secret (deleted)
+  # 9. Error: GET db/test/secret-rb (deleted)
   begin
-    client.get("db/test/secret")
+    client.get("db/test/secret-rb")
     check("error_deleted", false)
   rescue ShroudbKeep::Error
     check("error_deleted", true)

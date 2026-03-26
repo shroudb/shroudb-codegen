@@ -32,23 +32,23 @@ async function main(): Promise<void> {
     await client.health();
     check("health", true);
 
-    // 2. PUT db/test/secret
+    // 2. PUT db/test/secret-ts
     const value = b64encode("my-secret-value");
-    await client.put("db/test/secret", value);
+    await client.put("db/test/secret-ts", value);
     check("put", true);
 
-    // 3. GET db/test/secret
-    const result = await client.get("db/test/secret");
+    // 3. GET db/test/secret-ts
+    const result = await client.get("db/test/secret-ts");
     check("get", result != null);
 
-    // 4. PUT db/test/secret (version 2)
+    // 4. PUT db/test/secret-ts (version 2)
     const value2 = b64encode("my-updated-secret");
-    await client.put("db/test/secret", value2);
+    await client.put("db/test/secret-ts", value2);
     check("put_v2", true);
 
-    // 5. GET db/test/secret VERSION 1
+    // 5. GET db/test/secret-ts VERSION 1
     try {
-      const resultV1 = await client.get("db/test/secret", { version: 1 });
+      const resultV1 = await client.get("db/test/secret-ts", { version: 1 });
       check("get_v1", resultV1 != null);
     } catch (e: unknown) {
       if (e instanceof TypeError || (e instanceof Error && e.message.includes("key"))) {
@@ -58,9 +58,9 @@ async function main(): Promise<void> {
       }
     }
 
-    // 6. VERSIONS db/test/secret
+    // 6. VERSIONS db/test/secret-ts
     try {
-      await client.versions("db/test/secret");
+      await client.versions("db/test/secret-ts");
       check("versions", true);
     } catch (e: unknown) {
       if (e instanceof TypeError || (e instanceof Error && e.message.includes("key"))) {
@@ -82,13 +82,13 @@ async function main(): Promise<void> {
       }
     }
 
-    // 8. DELETE db/test/secret
-    await client.delete("db/test/secret");
+    // 8. DELETE db/test/secret-ts
+    await client.delete("db/test/secret-ts");
     check("delete", true);
 
-    // 9. Error: GET db/test/secret (deleted)
+    // 9. Error: GET db/test/secret-ts (deleted)
     try {
-      await client.get("db/test/secret");
+      await client.get("db/test/secret-ts");
       check("error_deleted", false);
     } catch (e: unknown) {
       if (e instanceof ShroudbKeepError) {

@@ -2,6 +2,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 
@@ -34,19 +35,21 @@ func main() {
 	defer client.Close()
 
 	// 1. Health
-	err = client.Health("")
+	err = client.Health()
 	check("health", err == nil)
 
 	// 2. POLICY_LIST
 	_, err = client.PolicyList()
 	check("policy_list", err == nil)
 
-	// 3. EVALUATE
-	_, err = client.Evaluate(&shroudb_sentry.EvaluateRequest{
-		Principal: map[string]string{"role": "admin"},
-		Resource:  map[string]string{"type": "document"},
-		Action:    map[string]string{"name": "read"},
-	})
+	// 3. EVALUATE (pass JSON string)
+	evalPayload := map[string]interface{}{
+		"principal": map[string]interface{}{"id": "user-1", "roles": []string{"admin"}},
+		"resource":  map[string]interface{}{"id": "doc-1", "type": "document"},
+		"action":    "read",
+	}
+	evalJSON, _ := json.Marshal(evalPayload)
+	_, err = client.Evaluate(string(evalJSON))
 	check("evaluate", err == nil)
 
 	// 4. KEY_INFO

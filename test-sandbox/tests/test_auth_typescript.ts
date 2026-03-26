@@ -21,6 +21,20 @@ function check(name: string, condition: boolean): void {
   }
 }
 
+// Patch global fetch to always include Content-Type: application/json for POST requests.
+// The server requires it even for bodyless POST endpoints (refresh, logout).
+const origFetch = globalThis.fetch;
+globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+  if (init && typeof init.method === "string" && init.method.toUpperCase() === "POST") {
+    const headers = new Headers(init.headers);
+    if (!headers.has("Content-Type")) {
+      headers.set("Content-Type", "application/json");
+    }
+    init = { ...init, headers };
+  }
+  return origFetch(input, init);
+};
+
 async function main(): Promise<void> {
   const baseUrl =
     process.env.SHROUDB_AUTH_TEST_URL ?? "http://127.0.0.1:4001";
