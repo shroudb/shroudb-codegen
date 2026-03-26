@@ -9,8 +9,9 @@ Unified SDK generator for all ShrouDB protocols. Reads a `protocol.toml` spec an
 | `shroudb` | Wire (RESP3) | Credential management server |
 | `shroudb-transit` | Wire (RESP3) | Encryption-as-a-service |
 | `shroudb-auth` | HTTP API | Authentication service |
+| `shroudb-moat` | Composite | Unified hub (imports engine specs, generates `@shroudb/sdk`) |
 
-Spec format is auto-detected: `[protocol]` for wire, `[api]` for HTTP.
+Spec format is auto-detected: `[protocol]` for wire, `[api]` for HTTP, `[[engines]]` for Moat composite.
 
 ## Usage
 
@@ -48,6 +49,25 @@ Each language gets a complete, publishable package:
 - **Response types** — typed structs/dataclasses for every command response
 - **Error hierarchy** — one error class per spec error code
 - **Package metadata** — pyproject.toml, package.json, go.mod, gemspec
+
+### Moat unified SDK (shroudb-moat composite spec)
+
+Generates a single SDK with engine-namespaced methods:
+
+```typescript
+const client = new ShrouDB({ endpoint: 'https://moat.example.com', token: 'sk-...' });
+await client.vault.verify('auth-tokens', userId, password);
+await client.transit.encrypt('payments', plaintext);
+await client.sentry.evaluate({ principal: userId, action: 'read', resource: 'doc:123' });
+await client.control.createTenant({ id: 'acme', name: 'Acme Corp' });
+```
+
+- **Engine namespaces** -- one property per engine (`client.vault`, `client.transit`, etc.)
+- **HTTP transport** -- default, with Bearer auth
+- **Control plane** -- tenant CRUD, routing, config management
+- **Import resolution** -- loads per-engine `protocol.toml` specs by relative path
+
+Currently generates TypeScript. Python, Go, Ruby support planned.
 
 ### HTTP API clients (shroudb-auth)
 
