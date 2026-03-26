@@ -1,0 +1,127 @@
+name: Generate SDKs
+
+on:
+  repository_dispatch:
+    types: [engine-release]
+  workflow_dispatch:
+    inputs:
+      engine:
+        description: "Engine name (vault, transit, auth, mint, sentry, keep, courier, pulse, all)"
+        required: true
+        default: "all"
+
+env:
+  CODEGEN_BIN: ./target/release/shroudb-codegen
+
+jobs:
+  generate:
+    name: Generate and publish SDKs
+    runs-on: [self-hosted, railway]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Rust
+        run: |
+          export CARGO_HOME="/tmp/cargo-${{ github.run_id }}"
+          export RUSTUP_HOME="/tmp/rustup-${{ github.run_id }}"
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+          echo "$CARGO_HOME/bin" >> "$GITHUB_PATH"
+        env:
+          CARGO_HOME: /tmp/cargo-${{ github.run_id }}
+          RUSTUP_HOME: /tmp/rustup-${{ github.run_id }}
+
+      - name: Build codegen
+        run: cargo build --release
+        env:
+          CARGO_HOME: /tmp/cargo-${{ github.run_id }}
+          RUSTUP_HOME: /tmp/rustup-${{ github.run_id }}
+
+      - name: Determine engine
+        id: engine
+        run: |
+          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            echo "engine=${{ github.event.client_payload.engine }}" >> "$GITHUB_OUTPUT"
+            echo "version=${{ github.event.client_payload.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "engine=${{ github.event.inputs.engine }}" >> "$GITHUB_OUTPUT"
+            echo "version=dev" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Clone protocol specs
+        run: |
+          mkdir -p specs
+          for repo in shroudb shroudb-transit shroudb-auth shroudb-mint shroudb-sentry shroudb-keep shroudb-courier shroudb-pulse; do
+            if [ -f "../$repo/protocol.toml" ]; then
+              cp "../$repo/protocol.toml" "specs/$repo.toml"
+            else
+              gh api "repos/shroudb/$repo/contents/protocol.toml" --jq '.content' | base64 -d > "specs/$repo.toml" 2>/dev/null || true
+            fi
+          done
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+
+      - name: Generate SDKs
+        run: |
+          ENGINE="${{ steps.engine.outputs.engine }}"
+
+          generate_engine() {
+            local spec="$1"
+            local name="$2"
+            if [ -f "$spec" ] && [ -s "$spec" ]; then
+              for lang in python typescript go ruby; do
+                $CODEGEN_BIN --spec "$spec" --lang "$lang" --output "generated/$lang/$name" 2>&1
+              done
+            fi
+          }
+
+          rm -rf generated/
+
+          if [ "$ENGINE" = "all" ]; then
+            generate_engine specs/shroudb.toml shroudb
+            generate_engine specs/shroudb-transit.toml shroudb-transit
+            generate_engine specs/shroudb-auth.toml shroudb-auth
+            generate_engine specs/shroudb-mint.toml shroudb-mint
+            generate_engine specs/shroudb-sentry.toml shroudb-sentry
+            generate_engine specs/shroudb-keep.toml shroudb-keep
+            generate_engine specs/shroudb-courier.toml shroudb-courier
+            generate_engine specs/shroudb-pulse.toml shroudb-pulse
+          else
+            SPEC_NAME="shroudb"
+            [ "$ENGINE" != "vault" ] && SPEC_NAME="shroudb-$ENGINE"
+            generate_engine "specs/$SPEC_NAME.toml" "$SPEC_NAME"
+          fi
+
+      - name: Update SDK repos
+        run: |
+          VERSION="${{ steps.engine.outputs.version }}"
+
+          update_sdk_repo() {
+            local lang="$1"
+            local repo="shroudb-sdk-$lang"
+
+            echo "Updating $repo..."
+            git clone "https://x-access-token:${{ secrets.GH_PAT }}@github.com/shroudb/$repo.git" "/tmp/$repo" 2>/dev/null || return 0
+
+            # Copy generated files (engine-specific update logic per language)
+            cp -r generated/$lang/* "/tmp/$repo/" 2>/dev/null || true
+
+            cd "/tmp/$repo"
+            git config user.name "shroudb-codegen[bot]"
+            git config user.email "codegen@shroudb.dev"
+
+            if git diff --quiet && git diff --staged --quiet; then
+              echo "  No changes for $repo"
+            else
+              git add -A
+              git commit -m "Update SDK: engine=${{ steps.engine.outputs.engine }} version=$VERSION"
+              git push
+              echo "  Pushed updates to $repo"
+            fi
+            cd -
+          }
+
+          for lang in python typescript go ruby; do
+            update_sdk_repo "$lang"
+          done
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
