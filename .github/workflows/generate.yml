@@ -9,6 +9,10 @@ on:
         description: "Engine name (vault, transit, auth, mint, sentry, keep, courier, pulse, all)"
         required: true
         default: "all"
+      publish:
+        description: "Publish packages to registries"
+        type: boolean
+        default: true
 
 env:
   CODEGEN_BIN: ./target/release/shroudb-codegen
@@ -102,7 +106,6 @@ jobs:
             echo "Updating $repo..."
             git clone "https://x-access-token:${{ secrets.GH_PAT }}@github.com/shroudb/$repo.git" "/tmp/$repo" 2>/dev/null || return 0
 
-            # Copy generated files (engine-specific update logic per language)
             cp -r generated/$lang/* "/tmp/$repo/" 2>/dev/null || true
 
             cd "/tmp/$repo"
@@ -114,7 +117,9 @@ jobs:
             else
               git add -A
               git commit -m "Update SDK: engine=${{ steps.engine.outputs.engine }} version=$VERSION"
+              git tag "v$VERSION" 2>/dev/null || true
               git push
+              git push --tags 2>/dev/null || true
               echo "  Pushed updates to $repo"
             fi
             cd -
@@ -125,3 +130,77 @@ jobs:
           done
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
+
+      # ─── Publish packages to registries ────────────────────────────
+      # Set these org secrets when ready:
+      #   NPM_TOKEN       — npm access token for @shroudb scope
+      #   PYPI_TOKEN       — PyPI API token (or private index token)
+      #   RUBYGEMS_API_KEY — RubyGems API key
+
+      - name: Publish Python SDK
+        if: steps.engine.outputs.version != 'dev'
+        run: |
+          VERSION="${{ steps.engine.outputs.version }}"
+          cd /tmp/shroudb-sdk-python
+
+          # Patch version in pyproject.toml
+          sed -i "s/^version = \".*\"/version = \"$VERSION\"/" pyproject.toml 2>/dev/null || \
+            sed -i '' "s/^version = \".*\"/version = \"$VERSION\"/" pyproject.toml
+
+          pip install --quiet build twine 2>/dev/null || pip3 install --quiet build twine
+          python -m build 2>/dev/null || python3 -m build
+          twine upload dist/* --non-interactive || echo "  Python publish skipped (no PYPI_TOKEN or already published)"
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+        continue-on-error: true
+
+      - name: Publish TypeScript SDK
+        if: steps.engine.outputs.version != 'dev'
+        run: |
+          VERSION="${{ steps.engine.outputs.version }}"
+          cd /tmp/shroudb-sdk-typescript
+
+          # Patch version in package.json
+          if command -v node &>/dev/null; then
+            node -e "const p=require('./package.json'); p.version='$VERSION'; require('fs').writeFileSync('package.json', JSON.stringify(p, null, 2)+'\n')"
+            npm publish --access restricted || echo "  TypeScript publish skipped (no NPM_TOKEN or already published)"
+          else
+            echo "  Node.js not available, skipping TypeScript publish"
+          fi
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        continue-on-error: true
+
+      - name: Publish Ruby SDK
+        if: steps.engine.outputs.version != 'dev'
+        run: |
+          VERSION="${{ steps.engine.outputs.version }}"
+          cd /tmp/shroudb-sdk-ruby
+
+          # Patch version in gemspec
+          sed -i "s/s.version = \".*\"/s.version = \"$VERSION\"/" shroudb.gemspec 2>/dev/null || \
+            sed -i '' "s/s.version = \".*\"/s.version = \"$VERSION\"/" shroudb.gemspec
+
+          if command -v gem &>/dev/null; then
+            gem build shroudb.gemspec
+            gem push shroudb-${VERSION}.gem || echo "  Ruby publish skipped (no RUBYGEMS_API_KEY or already published)"
+          else
+            echo "  Ruby not available, skipping Ruby publish"
+          fi
+        env:
+          GEM_HOST_API_KEY: ${{ secrets.RUBYGEMS_API_KEY }}
+        continue-on-error: true
+
+      - name: Tag Go SDK
+        if: steps.engine.outputs.version != 'dev'
+        run: |
+          VERSION="${{ steps.engine.outputs.version }}"
+          cd /tmp/shroudb-sdk-go
+
+          # Go modules are published by tagging the repo — no registry push needed.
+          # The tag was already pushed in the "Update SDK repos" step.
+          # Users install with: go get github.com/shroudb/shroudb-sdk-go@v$VERSION
+          echo "  Go SDK tagged v$VERSION (published via git tag)"
+        continue-on-error: true

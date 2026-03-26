@@ -6,8 +6,8 @@ Unified SDK generator for all ShrouDB protocols. Reads a `protocol.toml` spec an
 
 | Spec | Type | Description |
 |------|------|-------------|
-| `shroudb` | Wire (RESP3) | Credential management server |
-| `shroudb-transit` | Wire (RESP3) | Encryption-as-a-service |
+| `shroudb` | Wire | Credential management server |
+| `shroudb-transit` | Wire | Encryption-as-a-service |
 | `shroudb-auth` | HTTP API | Authentication service |
 | `shroudb-moat` | Composite | Unified hub (imports engine specs, generates `@shroudb/sdk`) |
 
@@ -41,7 +41,7 @@ shroudb-codegen --spec protocol.toml --lang all --dry-run
 
 Each language gets a complete, publishable package:
 
-- **Connection codec** — RESP3 frame parser and serializer
+- **Connection codec** — Wire protocol frame parser and serializer
 - **Connection pool** — idle connection reuse with configurable limits
 - **Typed client** — URI-based connect, one method per spec command
 - **Pipeline** — batch multiple commands in a single round-trip
