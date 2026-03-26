@@ -1,0 +1,15 @@
+# Sentry test server configuration.
+
+[server]
+bind = "127.0.0.1:{{PORT}}"
+http_bind = "127.0.0.1:{{HTTP_PORT}}"
+
+[storage]
+data_dir = "{{DATA_DIR}}"
+
+[signing]
+algorithm = "ES256"
+
+[policies]
+dir = "{{DATA_DIR}}/policies"
+default_decision = "deny"

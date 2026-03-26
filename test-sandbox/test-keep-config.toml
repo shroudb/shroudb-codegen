@@ -1,0 +1,10 @@
+# Keep test server configuration.
+
+[server]
+bind = "127.0.0.1:{{PORT}}"
+
+[storage]
+data_dir = "{{DATA_DIR}}"
+
+[secrets]
+max_versions = 5

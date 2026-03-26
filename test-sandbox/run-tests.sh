@@ -6,6 +6,11 @@ CODEGEN_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 SHROUDB_DIR="$(cd "$SCRIPT_DIR/../../shroudb" 2>/dev/null && pwd || echo "")"
 TRANSIT_DIR="$(cd "$SCRIPT_DIR/../../shroudb-transit" 2>/dev/null && pwd || echo "")"
 AUTH_DIR="$(cd "$SCRIPT_DIR/../../shroudb-auth" 2>/dev/null && pwd || echo "")"
+MINT_DIR="$(cd "$SCRIPT_DIR/../../shroudb-mint" 2>/dev/null && pwd || echo "")"
+SENTRY_DIR="$(cd "$SCRIPT_DIR/../../shroudb-sentry" 2>/dev/null && pwd || echo "")"
+KEEP_DIR="$(cd "$SCRIPT_DIR/../../shroudb-keep" 2>/dev/null && pwd || echo "")"
+COURIER_DIR="$(cd "$SCRIPT_DIR/../../shroudb-courier" 2>/dev/null && pwd || echo "")"
+PULSE_DIR="$(cd "$SCRIPT_DIR/../../shroudb-pulse" 2>/dev/null && pwd || echo "")"
 LANG_FILTER=""
 KEEP_SERVER=false
 MASTER_KEY="$(printf 'a%.0s' {1..64})"
@@ -23,6 +28,11 @@ done
 SHROUDB_SPEC=""
 TRANSIT_SPEC=""
 AUTH_SPEC=""
+MINT_SPEC=""
+SENTRY_SPEC=""
+KEEP_SPEC=""
+COURIER_SPEC=""
+PULSE_SPEC=""
 
 if [[ -n "$SHROUDB_DIR" && -f "$SHROUDB_DIR/protocol.toml" ]]; then
   SHROUDB_SPEC="$SHROUDB_DIR/protocol.toml"
@@ -33,9 +43,26 @@ fi
 if [[ -n "$AUTH_DIR" && -f "$AUTH_DIR/protocol.toml" ]]; then
   AUTH_SPEC="$AUTH_DIR/protocol.toml"
 fi
+if [[ -n "$MINT_DIR" && -f "$MINT_DIR/protocol.toml" ]]; then
+  MINT_SPEC="$MINT_DIR/protocol.toml"
+fi
+if [[ -n "$SENTRY_DIR" && -f "$SENTRY_DIR/protocol.toml" ]]; then
+  SENTRY_SPEC="$SENTRY_DIR/protocol.toml"
+fi
+if [[ -n "$KEEP_DIR" && -f "$KEEP_DIR/protocol.toml" ]]; then
+  KEEP_SPEC="$KEEP_DIR/protocol.toml"
+fi
+if [[ -n "$COURIER_DIR" && -f "$COURIER_DIR/protocol.toml" ]]; then
+  COURIER_SPEC="$COURIER_DIR/protocol.toml"
+fi
+if [[ -n "$PULSE_DIR" && -f "$PULSE_DIR/protocol.toml" ]]; then
+  PULSE_SPEC="$PULSE_DIR/protocol.toml"
+fi
 
-if [[ -z "$SHROUDB_SPEC" && -z "$TRANSIT_SPEC" && -z "$AUTH_SPEC" ]]; then
-  echo "ERROR: No protocol.toml found in ../../shroudb/, ../../shroudb-transit/, or ../../shroudb-auth/"
+if [[ -z "$SHROUDB_SPEC" && -z "$TRANSIT_SPEC" && -z "$AUTH_SPEC" \
+   && -z "$MINT_SPEC" && -z "$SENTRY_SPEC" && -z "$KEEP_SPEC" \
+   && -z "$COURIER_SPEC" && -z "$PULSE_SPEC" ]]; then
+  echo "ERROR: No protocol.toml found in any sibling product directory"
   exit 1
 fi
 
@@ -62,6 +89,11 @@ find_or_build_binary() {
 SHROUDB_BIN=""
 TRANSIT_BIN=""
 AUTH_BIN=""
+MINT_BIN=""
+SENTRY_BIN=""
+KEEP_BIN=""
+COURIER_BIN=""
+PULSE_BIN=""
 
 if [[ -n "$SHROUDB_SPEC" ]]; then
   SHROUDB_BIN=$(find_or_build_binary shroudb "$SHROUDB_DIR" "")
@@ -74,6 +106,26 @@ fi
 if [[ -n "$AUTH_SPEC" ]]; then
   AUTH_BIN=$(find_or_build_binary shroudb-auth "$AUTH_DIR" "")
   [[ -z "$AUTH_BIN" ]] && echo "WARN: shroudb-auth binary not found, skipping auth tests" && AUTH_SPEC=""
+fi
+if [[ -n "$MINT_SPEC" ]]; then
+  MINT_BIN=$(find_or_build_binary shroudb-mint "$MINT_DIR" "shroudb-mint-server")
+  [[ -z "$MINT_BIN" ]] && echo "WARN: shroudb-mint binary not found, skipping mint tests" && MINT_SPEC=""
+fi
+if [[ -n "$SENTRY_SPEC" ]]; then
+  SENTRY_BIN=$(find_or_build_binary shroudb-sentry "$SENTRY_DIR" "shroudb-sentry-server")
+  [[ -z "$SENTRY_BIN" ]] && echo "WARN: shroudb-sentry binary not found, skipping sentry tests" && SENTRY_SPEC=""
+fi
+if [[ -n "$KEEP_SPEC" ]]; then
+  KEEP_BIN=$(find_or_build_binary shroudb-keep "$KEEP_DIR" "shroudb-keep-server")
+  [[ -z "$KEEP_BIN" ]] && echo "WARN: shroudb-keep binary not found, skipping keep tests" && KEEP_SPEC=""
+fi
+if [[ -n "$COURIER_SPEC" ]]; then
+  COURIER_BIN=$(find_or_build_binary shroudb-courier "$COURIER_DIR" "shroudb-courier-server")
+  [[ -z "$COURIER_BIN" ]] && echo "WARN: shroudb-courier binary not found, skipping courier tests" && COURIER_SPEC=""
+fi
+if [[ -n "$PULSE_SPEC" ]]; then
+  PULSE_BIN=$(find_or_build_binary shroudb-pulse "$PULSE_DIR" "shroudb-pulse-server")
+  [[ -z "$PULSE_BIN" ]] && echo "WARN: shroudb-pulse binary not found, skipping pulse tests" && PULSE_SPEC=""
 fi
 
 # ── Run codegen ─────────────────────────────────────────────────────────────
@@ -92,6 +144,11 @@ run_codegen() {
 if [[ -n "$SHROUDB_SPEC" ]]; then run_codegen "$SHROUDB_SPEC" generated/shroudb; fi
 if [[ -n "$TRANSIT_SPEC" ]]; then run_codegen "$TRANSIT_SPEC" generated/transit; fi
 if [[ -n "$AUTH_SPEC" ]]; then run_codegen "$AUTH_SPEC" generated/auth; fi
+if [[ -n "$MINT_SPEC" ]]; then run_codegen "$MINT_SPEC" generated/mint; fi
+if [[ -n "$SENTRY_SPEC" ]]; then run_codegen "$SENTRY_SPEC" generated/sentry; fi
+if [[ -n "$KEEP_SPEC" ]]; then run_codegen "$KEEP_SPEC" generated/keep; fi
+if [[ -n "$COURIER_SPEC" ]]; then run_codegen "$COURIER_SPEC" generated/courier; fi
+if [[ -n "$PULSE_SPEC" ]]; then run_codegen "$PULSE_SPEC" generated/pulse; fi
 
 echo ""
 
@@ -107,11 +164,11 @@ DATA_DIR="$(mktemp -d)"
 PIDS=""
 
 start_server() {
-  local name="$1" binary="$2" template="$3" port="$4" extra_env="${5:-}"
+  local name="$1" binary="$2" template="$3" port="$4" extra_env="${5:-}" http_port="${6:-}"
   local config="$DATA_DIR/${name}-config.toml"
   local data="$DATA_DIR/${name}-data"
   mkdir -p "$data"
-  sed -e "s|{{PORT}}|$port|g" -e "s|{{DATA_DIR}}|$data|g" "$template" > "$config"
+  sed -e "s|{{PORT}}|$port|g" -e "s|{{DATA_DIR}}|$data|g" -e "s|{{HTTP_PORT}}|${http_port:-0}|g" "$template" > "$config"
 
   eval "$extra_env SHROUDB_MASTER_KEY=\"$MASTER_KEY\" \"$binary\" --config \"$config\" >/dev/null 2>&1 &"
   local pid=$!
@@ -149,6 +206,14 @@ echo "=== Starting servers ==="
 SHROUDB_PORT=""
 TRANSIT_PORT=""
 AUTH_PORT=""
+MINT_PORT=""
+MINT_HTTP_PORT=""
+SENTRY_PORT=""
+SENTRY_HTTP_PORT=""
+KEEP_PORT=""
+COURIER_PORT=""
+PULSE_PORT=""
+PULSE_HTTP_PORT=""
 
 if [[ -n "$SHROUDB_SPEC" ]]; then
   SHROUDB_PORT=$(find_free_port 16399)
@@ -164,6 +229,52 @@ if [[ -n "$AUTH_SPEC" ]]; then
   AUTH_PORT=$(find_free_port 14001)
   start_server auth "$AUTH_BIN" "$SCRIPT_DIR/test-auth-config.toml" "$AUTH_PORT"
   export SHROUDB_AUTH_TEST_URL="http://127.0.0.1:$AUTH_PORT"
+fi
+if [[ -n "$MINT_SPEC" ]]; then
+  MINT_PORT=$(find_free_port 16599)
+  MINT_HTTP_PORT=$(find_free_port 16600)
+  start_server mint "$MINT_BIN" "$SCRIPT_DIR/test-mint-config.toml" "$MINT_PORT" "" "$MINT_HTTP_PORT"
+  export SHROUDB_MINT_TEST_URI="shroudb-mint://127.0.0.1:$MINT_PORT"
+fi
+if [[ -n "$SENTRY_SPEC" ]]; then
+  SENTRY_PORT=$(find_free_port 16699)
+  SENTRY_HTTP_PORT=$(find_free_port 16700)
+  # Create policies directory and test policy file
+  mkdir -p "$DATA_DIR/sentry-data/policies"
+  cat > "$DATA_DIR/sentry-data/policies/test-permit.toml" <<'POLICY_EOF'
+[[policies]]
+name = "test-permit"
+effect = "permit"
+priority = 100
+[policies.principal]
+role = ["admin"]
+[policies.resource]
+type = "document"
+[policies.action]
+name = ["read"]
+POLICY_EOF
+  start_server sentry "$SENTRY_BIN" "$SCRIPT_DIR/test-sentry-config.toml" "$SENTRY_PORT" "" "$SENTRY_HTTP_PORT"
+  export SHROUDB_SENTRY_TEST_URI="shroudb-sentry://127.0.0.1:$SENTRY_PORT"
+fi
+if [[ -n "$KEEP_SPEC" ]]; then
+  KEEP_PORT=$(find_free_port 16799)
+  start_server keep "$KEEP_BIN" "$SCRIPT_DIR/test-keep-config.toml" "$KEEP_PORT"
+  export SHROUDB_KEEP_TEST_URI="shroudb-keep://127.0.0.1:$KEEP_PORT"
+fi
+if [[ -n "$COURIER_SPEC" ]]; then
+  COURIER_PORT=$(find_free_port 16899)
+  # Create templates directory and test template files
+  mkdir -p "$DATA_DIR/courier-data/templates"
+  echo "Test Subject" > "$DATA_DIR/courier-data/templates/test.subject.txt"
+  echo "Hello {{ name }}" > "$DATA_DIR/courier-data/templates/test.body.txt"
+  start_server courier "$COURIER_BIN" "$SCRIPT_DIR/test-courier-config.toml" "$COURIER_PORT"
+  export SHROUDB_COURIER_TEST_URI="shroudb-courier://127.0.0.1:$COURIER_PORT"
+fi
+if [[ -n "$PULSE_SPEC" ]]; then
+  PULSE_PORT=$(find_free_port 16999)
+  PULSE_HTTP_PORT=$(find_free_port 17000)
+  start_server pulse "$PULSE_BIN" "$SCRIPT_DIR/test-pulse-config.toml" "$PULSE_PORT" "" "$PULSE_HTTP_PORT"
+  export SHROUDB_PULSE_TEST_URI="shroudb-pulse://127.0.0.1:$PULSE_PORT"
 fi
 
 echo ""
@@ -276,6 +387,51 @@ if [[ -n "$AUTH_SPEC" ]]; then
   run_lang_test auth ruby          generated/auth/ruby          "$SCRIPT_DIR/tests/test_auth_ruby.rb"
 fi
 
+# ── Wire protocol: shroudb-mint ────────────────────────────────────────────
+
+if [[ -n "$MINT_SPEC" ]]; then
+  run_lang_test mint python        generated/mint/python        "$SCRIPT_DIR/tests/test_mint_python.py"
+  run_lang_test mint typescript    generated/mint/typescript    "$SCRIPT_DIR/tests/test_mint_typescript.ts"
+  run_lang_test mint go            generated/mint/go            "$SCRIPT_DIR/tests/test_mint_go.go"
+  run_lang_test mint ruby          generated/mint/ruby          "$SCRIPT_DIR/tests/test_mint_ruby.rb"
+fi
+
+# ── Wire protocol: shroudb-sentry ──────────────────────────────────────────
+
+if [[ -n "$SENTRY_SPEC" ]]; then
+  run_lang_test sentry python      generated/sentry/python      "$SCRIPT_DIR/tests/test_sentry_python.py"
+  run_lang_test sentry typescript  generated/sentry/typescript  "$SCRIPT_DIR/tests/test_sentry_typescript.ts"
+  run_lang_test sentry go          generated/sentry/go          "$SCRIPT_DIR/tests/test_sentry_go.go"
+  run_lang_test sentry ruby        generated/sentry/ruby        "$SCRIPT_DIR/tests/test_sentry_ruby.rb"
+fi
+
+# ── Wire protocol: shroudb-keep ────────────────────────────────────────────
+
+if [[ -n "$KEEP_SPEC" ]]; then
+  run_lang_test keep python        generated/keep/python        "$SCRIPT_DIR/tests/test_keep_python.py"
+  run_lang_test keep typescript    generated/keep/typescript    "$SCRIPT_DIR/tests/test_keep_typescript.ts"
+  run_lang_test keep go            generated/keep/go            "$SCRIPT_DIR/tests/test_keep_go.go"
+  run_lang_test keep ruby          generated/keep/ruby          "$SCRIPT_DIR/tests/test_keep_ruby.rb"
+fi
+
+# ── Wire protocol: shroudb-courier ─────────────────────────────────────────
+
+if [[ -n "$COURIER_SPEC" ]]; then
+  run_lang_test courier python     generated/courier/python     "$SCRIPT_DIR/tests/test_courier_python.py"
+  run_lang_test courier typescript generated/courier/typescript "$SCRIPT_DIR/tests/test_courier_typescript.ts"
+  run_lang_test courier go         generated/courier/go         "$SCRIPT_DIR/tests/test_courier_go.go"
+  run_lang_test courier ruby       generated/courier/ruby       "$SCRIPT_DIR/tests/test_courier_ruby.rb"
+fi
+
+# ── Wire protocol: shroudb-pulse ───────────────────────────────────────────
+
+if [[ -n "$PULSE_SPEC" ]]; then
+  run_lang_test pulse python       generated/pulse/python       "$SCRIPT_DIR/tests/test_pulse_python.py"
+  run_lang_test pulse typescript   generated/pulse/typescript   "$SCRIPT_DIR/tests/test_pulse_typescript.ts"
+  run_lang_test pulse go           generated/pulse/go           "$SCRIPT_DIR/tests/test_pulse_go.go"
+  run_lang_test pulse ruby         generated/pulse/ruby         "$SCRIPT_DIR/tests/test_pulse_ruby.rb"
+fi
+
 # ── Results ─────────────────────────────────────────────────────────────────
 
 echo "=== Results ==="
@@ -287,6 +443,11 @@ if [[ "$KEEP_SERVER" == "true" ]]; then
   [[ -n "$SHROUDB_PORT" ]] && echo "  shroudb:  $SHROUDB_TEST_URI"
   [[ -n "$TRANSIT_PORT" ]] && echo "  transit:  $SHROUDB_TRANSIT_TEST_URI"
   [[ -n "$AUTH_PORT" ]] && echo "  auth:     $SHROUDB_AUTH_TEST_URL"
+  [[ -n "$MINT_PORT" ]] && echo "  mint:     $SHROUDB_MINT_TEST_URI"
+  [[ -n "$SENTRY_PORT" ]] && echo "  sentry:   $SHROUDB_SENTRY_TEST_URI"
+  [[ -n "$KEEP_PORT" ]] && echo "  keep:     $SHROUDB_KEEP_TEST_URI"
+  [[ -n "$COURIER_PORT" ]] && echo "  courier:  $SHROUDB_COURIER_TEST_URI"
+  [[ -n "$PULSE_PORT" ]] && echo "  pulse:    $SHROUDB_PULSE_TEST_URI"
 fi
 
 if [[ $TOTAL_FAIL -gt 0 ]]; then

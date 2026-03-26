@@ -1,0 +1,27 @@
+# Mint test server configuration.
+
+[server]
+bind = "127.0.0.1:{{PORT}}"
+http_bind = "127.0.0.1:{{HTTP_PORT}}"
+
+[storage]
+data_dir = "{{DATA_DIR}}"
+
+[cas.test-ca]
+algorithm = "ecdsa-p256"
+subject = "CN=Test CA,O=ShrouDB Test"
+ttl_days = 365
+
+[profiles.server]
+key_usage = ["DigitalSignature", "KeyEncipherment"]
+extended_key_usage = ["ServerAuth"]
+max_ttl_days = 90
+default_ttl = "24h"
+allow_san_dns = true
+allow_san_ip = true
+
+[profiles.client]
+key_usage = ["DigitalSignature"]
+extended_key_usage = ["ClientAuth"]
+max_ttl_days = 30
+default_ttl = "1h"
