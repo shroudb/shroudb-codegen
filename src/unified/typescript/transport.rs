@@ -160,8 +160,10 @@ class Connection {
         return { value: payload, rest: after };
       case "-": {
         const spaceIdx = payload.indexOf(" ");
-        const code = spaceIdx >= 0 ? payload.substring(0, spaceIdx) : payload;
+        let code = spaceIdx >= 0 ? payload.substring(0, spaceIdx) : payload;
         const detail = spaceIdx >= 0 ? payload.substring(spaceIdx + 1) : "";
+        // Engines send "ERR {message}" — infer a structured code from the message.
+        if (code === "ERR") code = inferErrorCode(detail);
         this.buffer = after;
         const reject = this.rejectQueue.shift();
         this.resolveQueue.shift();
@@ -398,6 +400,39 @@ function parseResponse(raw: WireValue): CommandResult {
   if (typeof raw === "number") return { value: raw };
   if (typeof raw === "object" && !Array.isArray(raw)) return raw as CommandResult;
   return { data: raw };
+}
+
+/**
+ * Infer a structured error code from an engine error message.
+ *
+ * Engines send generic `ERR {message}` errors. This function maps known
+ * message patterns back to the structured codes defined in protocol.toml.
+ */
+function inferErrorCode(message: string): string {
+  const m = message.toLowerCase();
+  if (m.includes("not found")) return "NOTFOUND";
+  if (m.includes("already exists")) return "EXISTS";
+  if (m.includes("is deleted") || m.includes("soft-revoked")) return "DELETED";
+  if (m.includes("access denied") || m.includes("policy denied")) return "DENIED";
+  if (m.includes("not authenticated")) return "NOT_AUTHENTICATED";
+  if (m.includes("verification failed")) return "VERIFICATION_FAILED";
+  if (m.includes("account locked")) return "ACCOUNT_LOCKED";
+  if (m.includes("invalid token") || m.includes("token reuse")) return "INVALID_TOKEN";
+  if (m.includes("invalid argument") || m.includes("invalid path") || m.includes("bad argument")) return "BADARG";
+  if (m.includes("unknown command")) return "BADARG";
+  if (m.includes("schema validation")) return "SCHEMA_VALIDATION";
+  if (m.includes("missing") && m.includes("field")) return "MISSING_FIELD";
+  if (m.includes("invalid field")) return "INVALID_FIELD";
+  if (m.includes("capability") || m.includes("unavailable")) return "CAPABILITY_MISSING";
+  if (m.includes("retired")) return "RETIRED";
+  if (m.includes("disabled")) return "DISABLED";
+  if (m.includes("algorithm mismatch") || m.includes("wrong type")) return "WRONGTYPE";
+  if (m.includes("shredded") || m.includes("crypto-shred")) return "SHREDDED";
+  if (m.includes("revoked")) return "REVOKED";
+  if (m.includes("object store") || m.includes("s3")) return "OBJECT_STORE";
+  if (m.includes("encryption failed") || m.includes("decryption failed")) return "CRYPTO";
+  if (m.includes("store error")) return "INTERNAL";
+  return "ERR";
 }
 "#
         .into(),

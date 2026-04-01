@@ -50,6 +50,33 @@ fn gen_errors(ir: &UnifiedIR) -> GeneratedFile {
         writeln!(out, "    # {desc}").unwrap();
         writeln!(out, "    {code} = \"{code}\"").unwrap();
     }
+    out.push_str("  end\n\n");
+
+    // Error code inference from engine messages.
+    out.push_str("  # @api private\n");
+    out.push_str("  def self._infer_error_code(message)\n");
+    out.push_str("    m = message.to_s.downcase\n");
+    out.push_str("    return \"NOTFOUND\" if m.include?(\"not found\")\n");
+    out.push_str("    return \"EXISTS\" if m.include?(\"already exists\")\n");
+    out.push_str(
+        "    return \"DELETED\" if m.include?(\"is deleted\") || m.include?(\"soft-revoked\")\n",
+    );
+    out.push_str(
+        "    return \"DENIED\" if m.include?(\"access denied\") || m.include?(\"policy denied\")\n",
+    );
+    out.push_str("    return \"VERIFICATION_FAILED\" if m.include?(\"verification failed\")\n");
+    out.push_str("    return \"ACCOUNT_LOCKED\" if m.include?(\"account locked\")\n");
+    out.push_str("    return \"INVALID_TOKEN\" if m.include?(\"invalid token\") || m.include?(\"token reuse\")\n");
+    out.push_str("    return \"BADARG\" if m.include?(\"invalid argument\") || m.include?(\"invalid path\") || m.include?(\"unknown command\")\n");
+    out.push_str("    return \"CAPABILITY_MISSING\" if m.include?(\"capability\") || m.include?(\"unavailable\")\n");
+    out.push_str("    return \"RETIRED\" if m.include?(\"retired\")\n");
+    out.push_str("    return \"DISABLED\" if m.include?(\"disabled\")\n");
+    out.push_str(
+        "    return \"SHREDDED\" if m.include?(\"shredded\") || m.include?(\"crypto-shred\")\n",
+    );
+    out.push_str("    return \"REVOKED\" if m.include?(\"revoked\")\n");
+    out.push_str("    return \"CRYPTO\" if m.include?(\"encryption failed\") || m.include?(\"decryption failed\")\n");
+    out.push_str("    \"ERR\"\n");
     out.push_str("  end\n");
     out.push_str("end\n");
 

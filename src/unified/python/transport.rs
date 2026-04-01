@@ -150,6 +150,9 @@ class Resp3Connection:
             else:
                 code = payload
                 detail = ""
+            # Engines send "ERR {msg}" — infer structured code from message.
+            if code == "ERR":
+                code = _infer_error_code(detail)
             raise ShrouDBError(code, detail)
         if tag == ":":
             return int(payload)
@@ -228,6 +231,54 @@ class ConnectionPool:
             conn.close()
             await conn.wait_closed()
         self._idle.clear()
+
+
+def _infer_error_code(message: str) -> str:
+    """Infer a structured error code from an engine error message.
+
+    Engines send generic ``ERR {message}`` errors. This maps known message
+    patterns back to the structured codes defined in protocol.toml.
+    """
+    m = message.lower()
+    if "not found" in m:
+        return "NOTFOUND"
+    if "already exists" in m:
+        return "EXISTS"
+    if "is deleted" in m or "soft-revoked" in m:
+        return "DELETED"
+    if "access denied" in m or "policy denied" in m:
+        return "DENIED"
+    if "not authenticated" in m:
+        return "NOT_AUTHENTICATED"
+    if "verification failed" in m:
+        return "VERIFICATION_FAILED"
+    if "account locked" in m:
+        return "ACCOUNT_LOCKED"
+    if "invalid token" in m or "token reuse" in m:
+        return "INVALID_TOKEN"
+    if "invalid argument" in m or "invalid path" in m or "bad argument" in m:
+        return "BADARG"
+    if "unknown command" in m:
+        return "BADARG"
+    if "schema validation" in m:
+        return "SCHEMA_VALIDATION"
+    if "missing" in m and "field" in m:
+        return "MISSING_FIELD"
+    if "invalid field" in m:
+        return "INVALID_FIELD"
+    if "capability" in m or "unavailable" in m:
+        return "CAPABILITY_MISSING"
+    if "retired" in m:
+        return "RETIRED"
+    if "disabled" in m:
+        return "DISABLED"
+    if "shredded" in m or "crypto-shred" in m:
+        return "SHREDDED"
+    if "revoked" in m:
+        return "REVOKED"
+    if "encryption failed" in m or "decryption failed" in m:
+        return "CRYPTO"
+    return "ERR"
 
 
 def _parse_response(raw: WireValue) -> dict[str, Any]:

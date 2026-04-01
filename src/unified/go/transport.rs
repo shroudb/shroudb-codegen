@@ -95,6 +95,10 @@ func (c *resp3Conn) readReply() (any, error) {
 			code = payload[:idx]
 			detail = payload[idx+1:]
 		}
+		// Engines send "ERR {msg}" — infer structured code from message.
+		if code == "ERR" {
+			code = inferErrorCode(detail)
+		}
 		return nil, &ShrouDBError{Code: code, Message: detail}
 	case ':':
 		n, err := strconv.Atoi(payload)
@@ -342,6 +346,47 @@ func (t *MoatResp3Transport) Close() error {
 
 // parseResp3Response converts a raw RESP3 value into a response map.
 // Bulk strings containing JSON are parsed into maps automatically.
+// inferErrorCode maps generic "ERR {message}" to structured error codes.
+func inferErrorCode(message string) string {
+	m := strings.ToLower(message)
+	switch {
+	case strings.Contains(m, "not found"):
+		return "NOTFOUND"
+	case strings.Contains(m, "already exists"):
+		return "EXISTS"
+	case strings.Contains(m, "is deleted"), strings.Contains(m, "soft-revoked"):
+		return "DELETED"
+	case strings.Contains(m, "access denied"), strings.Contains(m, "policy denied"):
+		return "DENIED"
+	case strings.Contains(m, "not authenticated"):
+		return "NOT_AUTHENTICATED"
+	case strings.Contains(m, "verification failed"):
+		return "VERIFICATION_FAILED"
+	case strings.Contains(m, "account locked"):
+		return "ACCOUNT_LOCKED"
+	case strings.Contains(m, "invalid token"), strings.Contains(m, "token reuse"):
+		return "INVALID_TOKEN"
+	case strings.Contains(m, "invalid argument"), strings.Contains(m, "invalid path"), strings.Contains(m, "bad argument"), strings.Contains(m, "unknown command"):
+		return "BADARG"
+	case strings.Contains(m, "schema validation"):
+		return "SCHEMA_VALIDATION"
+	case strings.Contains(m, "capability"), strings.Contains(m, "unavailable"):
+		return "CAPABILITY_MISSING"
+	case strings.Contains(m, "retired"):
+		return "RETIRED"
+	case strings.Contains(m, "disabled"):
+		return "DISABLED"
+	case strings.Contains(m, "shredded"), strings.Contains(m, "crypto-shred"):
+		return "SHREDDED"
+	case strings.Contains(m, "revoked"):
+		return "REVOKED"
+	case strings.Contains(m, "encryption failed"), strings.Contains(m, "decryption failed"):
+		return "CRYPTO"
+	default:
+		return "ERR"
+	}
+}
+
 func parseResp3Response(raw any) map[string]any {
 	if raw == nil {
 		return map[string]any{}

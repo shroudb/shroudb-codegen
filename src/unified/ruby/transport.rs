@@ -118,7 +118,10 @@ module ShrouDB
         when "+"  then payload
         when "-"
           parts = payload.split(" ", 2)
-          raise ShrouDB::Error.new(parts[0] || "ERR", parts[1] || payload)
+          code = parts[0] || "ERR"
+          detail = parts[1] || payload
+          code = ShrouDB._infer_error_code(detail) if code == "ERR"
+          raise ShrouDB::Error.new(code, detail)
         when ":"  then payload.to_i
         when "$"
           len = payload.to_i
