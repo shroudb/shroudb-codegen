@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os"
-	"strings"
 
 	shroudb "github.com/shroudb/shroudb-go"
 )
@@ -31,21 +30,44 @@ func main() {
 	}()
 
 	blobData := base64.StdEncoding.EncodeToString([]byte("hello encrypted world"))
-	blobID := "test-blob-1"
+	blobID := fmt.Sprintf("test-blob-go-%d", os.Getpid())
 
 	err = db.Stash.Health(ctx)
 	check("health", err == nil)
 	if err != nil { fmt.Printf("    error: %v\n", err) }
 
-	// store — may fail with CIPHER_UNAVAILABLE
 	_, err = db.Stash.Store(ctx, blobID, blobData, nil)
-	check("store", err == nil || strings.Contains(strings.ToLower(err.Error()), "cipher"))
-
-	// inspect — NOTFOUND if store failed
-	_, err = db.Stash.Inspect(ctx, blobID)
-	check("inspect", true)
-
-	err = db.Stash.Command(ctx)
-	check("command_list", err == nil)
+	check("store", err == nil)
 	if err != nil { fmt.Printf("    error: %v\n", err) }
+
+	_, err = db.Stash.Inspect(ctx, blobID)
+	check("inspect", err == nil)
+	if err != nil { fmt.Printf("    error: %v\n", err) }
+
+	err = db.Stash.Retrieve(ctx, blobID)
+	check("retrieve", err == nil)
+	if err != nil { fmt.Printf("    error: %v\n", err) }
+
+	_, err = db.Stash.Revoke(ctx, blobID, nil)
+	check("revoke_soft", err == nil)
+	if err != nil { fmt.Printf("    error: %v\n", err) }
+
+	err = db.Stash.Retrieve(ctx, blobID)
+	check("error_after_revoke", err != nil)
+
+	// Hard revoke
+	blobID2 := blobID + "-shred"
+	_, err = db.Stash.Store(ctx, blobID2, blobData, nil)
+	if err == nil {
+		_, err = db.Stash.Revoke(ctx, blobID2, nil)
+		check("revoke_hard", err == nil)
+		if err != nil { fmt.Printf("    error: %v\n", err) }
+
+		err = db.Stash.Retrieve(ctx, blobID2)
+		check("error_after_shred", err != nil)
+	} else {
+		check("revoke_hard", false)
+		fmt.Printf("    error: %v\n", err)
+		check("error_after_shred", false)
+	}
 }

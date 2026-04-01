@@ -29,7 +29,7 @@ async def main():
     db = ShrouDB(stash=uri)
 
     blob_data = base64.b64encode(b"hello encrypted world").decode()
-    blob_id = "test-blob-1"
+    import time; blob_id = f"test-blob-py-{int(time.time()) % 100000}"
 
     try:
         # health
@@ -40,36 +40,69 @@ async def main():
             check("health", False)
             print(f"    error: {e}")
 
-        # store (may fail if Cipher engine is not wired)
+        # store
         try:
             result = await db.stash.store(blob_id, blob_data)
             check("store", result is not None)
-        except ShrouDBError as e:
-            # CIPHER_UNAVAILABLE is expected when running standalone without Cipher
-            check("store", "cipher" in str(e).lower() or "CIPHER" in str(e))
-            if "cipher" not in str(e).lower():
-                print(f"    error: {e}")
         except Exception as e:
             check("store", False)
             print(f"    error: {e}")
 
-        # inspect (will fail with NOTFOUND if store didn't succeed — that's OK)
+        # inspect
         try:
             result = await db.stash.inspect(blob_id)
             check("inspect", result is not None)
-        except ShrouDBError as e:
-            check("inspect", "NOTFOUND" in str(e) or "not found" in str(e).lower())
         except Exception as e:
             check("inspect", False)
             print(f"    error: {e}")
 
-        # command list
+        # retrieve
         try:
-            await db.stash.command()
-            check("command_list", True)
+            result = await db.stash.retrieve(blob_id)
+            check("retrieve", result is not None)
         except Exception as e:
-            check("command_list", False)
+            check("retrieve", False)
             print(f"    error: {e}")
+
+        # revoke (soft)
+        try:
+            result = await db.stash.revoke(blob_id, soft=True)
+            check("revoke_soft", result is not None)
+        except Exception as e:
+            check("revoke_soft", False)
+            print(f"    error: {e}")
+
+        # error: retrieve after soft revoke
+        try:
+            await db.stash.retrieve(blob_id)
+            check("error_after_revoke", False)
+            print("    expected ShrouDBError but succeeded")
+        except ShrouDBError:
+            check("error_after_revoke", True)
+        except Exception as e:
+            check("error_after_revoke", False)
+            print(f"    unexpected: {type(e).__name__}: {e}")
+
+        # store another blob and hard revoke (crypto-shred)
+        blob_id2 = f"{blob_id}-shred"
+        try:
+            await db.stash.store(blob_id2, blob_data)
+            result = await db.stash.revoke(blob_id2)
+            check("revoke_hard", result is not None)
+        except Exception as e:
+            check("revoke_hard", False)
+            print(f"    error: {e}")
+
+        # error: retrieve after hard revoke
+        try:
+            await db.stash.retrieve(blob_id2)
+            check("error_after_shred", False)
+            print("    expected ShrouDBError but succeeded")
+        except ShrouDBError:
+            check("error_after_shred", True)
+        except Exception as e:
+            check("error_after_shred", False)
+            print(f"    unexpected: {type(e).__name__}: {e}")
 
     finally:
         await db.close()
