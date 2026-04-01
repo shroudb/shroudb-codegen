@@ -34,6 +34,12 @@ pub struct EngineIR {
     pub commands: Vec<CommandIR>,
     pub types: BTreeMap<String, TypeIR>,
     pub error_codes: BTreeMap<String, ErrorCodeIR>,
+    /// Whether this engine exposes an HTTP REST API.
+    pub has_http_api: bool,
+    /// HTTP port (if the engine has an HTTP API).
+    pub http_port: Option<u16>,
+    /// HTTP base path (e.g., "/sigil").
+    pub http_base_path: Option<String>,
 }
 
 /// A normalized command.
@@ -48,6 +54,15 @@ pub struct CommandIR {
     pub named_params: Vec<ParamIR>,
     pub response_fields: Vec<FieldIR>,
     pub error_refs: Vec<String>,
+    /// HTTP endpoint metadata (if the command has an HTTP API mapping).
+    pub http: Option<HttpEndpointIR>,
+}
+
+/// HTTP REST endpoint metadata parsed from `http = { method, path, request_body }`.
+pub struct HttpEndpointIR {
+    pub method: String,
+    pub path: String,
+    pub body_type: Option<String>,
 }
 
 pub struct ParamIR {
@@ -155,6 +170,26 @@ impl UnifiedIR {
                 }
             }
 
+            let has_http_api = commands.iter().any(|c| c.http.is_some());
+            let http_port = spec.protocol.default_http_port;
+            let http_base_path = if has_http_api {
+                // Extract base path from the first HTTP endpoint (e.g., "/sigil" from "/sigil/schemas")
+                commands
+                    .iter()
+                    .filter_map(|c| c.http.as_ref())
+                    .map(|h| {
+                        let path = &h.path;
+                        // Take the first path segment as base: "/sigil/..." → "/sigil"
+                        match path[1..].find('/') {
+                            Some(i) => path[..i + 1].to_string(),
+                            None => path.clone(),
+                        }
+                    })
+                    .next()
+            } else {
+                None
+            };
+
             engines.push(EngineIR {
                 name: engine_ref.name.clone(),
                 description: spec.protocol.description.clone(),
@@ -164,6 +199,9 @@ impl UnifiedIR {
                 commands,
                 types,
                 error_codes,
+                has_http_api,
+                http_port,
+                http_base_path,
             });
         }
 
@@ -173,6 +211,77 @@ impl UnifiedIR {
             engines,
             moat_http_port: moat.protocol.default_http_port,
             moat_resp3_port: moat.protocol.default_resp3_port,
+        })
+    }
+
+    /// Build the IR from a single engine spec (for `--http` mode).
+    pub fn from_single_engine(
+        engine_name: &str,
+        spec: &crate::spec::wire::ProtocolSpec,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let mut types = BTreeMap::new();
+        for (type_name, type_val) in &spec.types {
+            if let Some(t) = parse_type_def(type_val) {
+                types.insert(type_name.clone(), t);
+            }
+        }
+
+        let mut error_codes = BTreeMap::new();
+        for (code, def) in &spec.error_codes {
+            error_codes.insert(
+                code.clone(),
+                ErrorCodeIR {
+                    code: code.clone(),
+                    description: def.description.clone(),
+                    http_equiv: def.http_equiv,
+                },
+            );
+        }
+
+        let mut commands = Vec::new();
+        for (cmd_name, cmd_val) in &spec.commands {
+            if let Some(cmd) = parse_command(cmd_name, cmd_val) {
+                commands.push(cmd);
+            }
+        }
+
+        let has_http_api = commands.iter().any(|c| c.http.is_some());
+        let http_port = spec.protocol.default_http_port;
+
+        let http_base_path = commands
+            .iter()
+            .filter_map(|c| c.http.as_ref())
+            .map(|h| match h.path[1..].find('/') {
+                Some(i) => h.path[..i + 1].to_string(),
+                None => h.path.clone(),
+            })
+            .next();
+
+        let engine = EngineIR {
+            name: engine_name.to_string(),
+            description: spec.protocol.description.clone(),
+            default_port: spec.protocol.default_tcp_port,
+            uri_schemes: spec.protocol.uri_schemes.clone(),
+            http_prefix: format!("/v1/{engine_name}"),
+            commands,
+            types,
+            error_codes,
+            has_http_api,
+            http_port,
+            http_base_path,
+        };
+
+        Ok(Self {
+            version: spec.protocol.version.clone(),
+            packages: SdkPackages {
+                typescript: format!("@shroudb/{engine_name}-http"),
+                python: format!("shroudb-{engine_name}-http"),
+                go_module: format!("github.com/shroudb/{engine_name}-http-go"),
+                ruby: format!("shroudb-{engine_name}-http"),
+            },
+            engines: vec![engine],
+            moat_http_port: http_port.unwrap_or(0),
+            moat_resp3_port: 0,
         })
     }
 }
@@ -315,6 +424,7 @@ fn parse_standard_command(
         named_params,
         response_fields,
         error_refs,
+        http: parse_http_annotation(table),
     })
 }
 
@@ -485,6 +595,7 @@ fn parse_syntax_command(
         named_params,
         response_fields,
         error_refs,
+        http: parse_http_annotation(table),
     })
 }
 
@@ -574,6 +685,7 @@ fn parse_implicit_command(
         named_params,
         response_fields,
         error_refs: Vec::new(),
+        http: parse_http_annotation(table),
     })
 }
 
@@ -738,6 +850,22 @@ fn infer_ruby_type(t: &toml::map::Map<String, toml::Value>) -> String {
         return "TrueClass".into();
     }
     "String".into()
+}
+
+/// Parse `http = { method, path, request_body }` annotation from a command table.
+fn parse_http_annotation(table: &toml::map::Map<String, toml::Value>) -> Option<HttpEndpointIR> {
+    let http = table.get("http")?.as_table()?;
+    let method = http.get("method")?.as_str()?.to_string();
+    let path = http.get("path")?.as_str()?.to_string();
+    let body_type = http
+        .get("request_body")
+        .and_then(|v| v.as_str())
+        .map(String::from);
+    Some(HttpEndpointIR {
+        method,
+        path,
+        body_type,
+    })
 }
 
 /// Normalize type names from various specs into consistent keys.

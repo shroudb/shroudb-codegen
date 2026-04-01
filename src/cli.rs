@@ -24,6 +24,10 @@ pub struct CodegenCli {
     /// Print what would be generated without writing files
     #[arg(long)]
     pub dry_run: bool,
+
+    /// Generate HTTP REST SDK instead of RESP3 (for engines with HTTP APIs)
+    #[arg(long)]
+    pub http: bool,
 }
 
 /// Run the codegen pipeline.

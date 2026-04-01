@@ -19,19 +19,37 @@ shroudb-codegen --spec ../shroudb-moat/protocol.toml --lang all --dry-run
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--spec` | `protocol.toml` | Path to the Moat composite spec |
+| `--spec` | `protocol.toml` | Path to the Moat composite spec (or engine spec with `--http`) |
 | `--lang` | (required) | `typescript`, `python`, `go`, `ruby`, or `all` |
 | `--output` | `generated` | Output directory |
+| `--http` | | Generate HTTP REST SDK instead of RESP3 (for engines with HTTP APIs) |
 | `--dry-run` | | Print file list without writing |
 
 ## Generated SDKs
 
+### Unified RESP3 SDK (all engines)
+
 | Language | Package | Files |
 |----------|---------|-------|
-| TypeScript | `@shroudb/sdk` | 29 |
-| Python | `shroudb` | 38 |
-| Go | `github.com/shroudb/shroudb-go` | 18 |
-| Ruby | `shroudb` gem | 27 |
+| TypeScript | `@shroudb/sdk` | 31 |
+| Python | `shroudb` | 41 |
+| Go | `github.com/shroudb/shroudb-go` | 19 |
+| Ruby | `shroudb` gem | 29 |
+
+### Sigil HTTP REST SDK
+
+For frontend applications that need Sigil's HTTP REST API (login, signup, password management, JWT verification):
+
+```bash
+shroudb-codegen --spec ../shroudb-sigil/protocol.toml --lang all --output sigil-http/ --http
+```
+
+| Language | Package | Endpoints |
+|----------|---------|-----------|
+| TypeScript | `@shroudb/sigil-http` | 28 |
+| Python | `shroudb-sigil-http` | 28 |
+| Go | `github.com/shroudb/sigil-http-go` | 28 |
+| Ruby | `shroudb-sigil-http` gem | 28 |
 
 Each SDK includes:
 

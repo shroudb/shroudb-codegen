@@ -68,6 +68,10 @@ jobs:
         run: |
           $CODEGEN_BIN --spec ../shroudb-moat/protocol.toml --lang all --output generated/
 
+      - name: Generate Sigil HTTP SDK
+        run: |
+          $CODEGEN_BIN --spec ../shroudb-sigil/protocol.toml --lang all --output generated-http/ --http
+
       # ── Update SDK repos ───────────────────────────────────────────
 
       - name: Push to shroudb-sdk-typescript
