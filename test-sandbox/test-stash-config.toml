@@ -1,0 +1,12 @@
+# Stash test server configuration (uses MinIO for S3).
+[server]
+tcp_bind = "127.0.0.1:{{PORT}}"
+
+[storage]
+data_dir = "{{DATA_DIR}}"
+
+[engine]
+bucket = "stash-test"
+region = "us-east-1"
+endpoint = "http://127.0.0.1:{{MINIO_PORT}}"
+keyring = "stash-blobs"

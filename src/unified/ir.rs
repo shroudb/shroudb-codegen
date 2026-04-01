@@ -348,12 +348,11 @@ fn parse_syntax_command(
     let mut positional_params = Vec::new();
     let mut named_params = Vec::new();
 
-    if let Some(params) = table
-        .get("parameters")
-        .or_else(|| table.get("params"))
-        .and_then(|v| v.as_array())
-    {
-        for p in params {
+    let params_val = table.get("parameters").or_else(|| table.get("params"));
+
+    if let Some(params_arr) = params_val.and_then(|v| v.as_array()) {
+        // Array format: [{ name, type, required, ... }]
+        for p in params_arr {
             let pt = p.as_table()?;
             let param_name = pt.get("name")?.as_str()?.to_string();
             let type_key =
@@ -371,6 +370,72 @@ fn parse_syntax_command(
                     type_key,
                     required: true,
                     wire_key: None,
+                    variadic: false,
+                    description: desc,
+                });
+            } else {
+                named_params.push(ParamIR {
+                    name: param_name.clone(),
+                    type_key,
+                    required: false,
+                    wire_key: Some(param_name.to_uppercase()),
+                    variadic: false,
+                    description: desc,
+                });
+            }
+        }
+    } else if let Some(params_table) = params_val.and_then(|v| v.as_table()) {
+        // Table format: { param_name = { type, required, ... } } (Stash style)
+        // Extract positional order from the syntax string: <param1> <param2>
+        let syntax_order: Vec<String> = parts
+            .iter()
+            .filter(|p| p.starts_with('<') && p.ends_with('>'))
+            .map(|p| p.trim_matches(|c| c == '<' || c == '>').to_string())
+            .collect();
+
+        // Process in syntax order for positional params, then remaining for keywords
+        let mut processed = std::collections::HashSet::new();
+        for syntax_name in &syntax_order {
+            if let Some(param_val) = params_table.get(syntax_name) {
+                processed.insert(syntax_name.clone());
+                let pt = param_val.as_table()?;
+                let type_str = pt.get("type").and_then(|v| v.as_str()).unwrap_or("string");
+                let desc = pt
+                    .get("description")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                positional_params.push(ParamIR {
+                    name: syntax_name.clone(),
+                    type_key: normalize_type(type_str),
+                    required: true,
+                    wire_key: None,
+                    variadic: false,
+                    description: desc,
+                });
+            }
+        }
+        for (param_name, param_val) in params_table {
+            if processed.contains(param_name) {
+                continue;
+            }
+            let pt = param_val.as_table()?;
+            let type_str = pt.get("type").and_then(|v| v.as_str()).unwrap_or("string");
+            let type_key = normalize_type(type_str);
+            let desc = pt
+                .get("description")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+
+            // Remaining params (not in syntax order) are keyword params.
+            // "flag" type = boolean keyword with no value.
+            if type_str == "flag" {
+                named_params.push(ParamIR {
+                    name: param_name.clone(),
+                    type_key: "boolean".into(),
+                    required: false,
+                    wire_key: Some(param_name.to_uppercase()),
                     variadic: false,
                     description: desc,
                 });

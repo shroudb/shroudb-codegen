@@ -37,7 +37,7 @@ fi
 # ── Engine definitions ───────────────────────────────────────────────────
 # Each engine: name, directory, binary name, config template
 
-ENGINES="shroudb cipher sigil forge sentry keep courier chronicle veil"
+ENGINES="shroudb cipher sigil forge sentry keep courier chronicle veil stash"
 
 engine_dir() {
   local d="$SCRIPT_DIR/../../shroudb"
@@ -126,9 +126,13 @@ start_engine() {
 
   # Build config file from template.
   local cfg="$DATA_DIR/${name}-config.toml"
-  sed -e "s|{{PORT}}|$port|g" -e "s|{{DATA_DIR}}|$data|g" -e "s|{{HTTP_PORT}}|${http_port:-0}|g" "$config" > "$cfg"
+  sed -e "s|{{PORT}}|$port|g" -e "s|{{DATA_DIR}}|$data|g" -e "s|{{HTTP_PORT}}|${http_port:-0}|g" -e "s|{{MINIO_PORT}}|${MINIO_PORT:-9000}|g" "$config" > "$cfg"
 
-  SHROUDB_MASTER_KEY="$MASTER_KEY" "$binary" --config "$cfg" >/dev/null 2>&1 &
+  SHROUDB_MASTER_KEY="$MASTER_KEY" \
+    AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID:-}" \
+    AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY:-}" \
+    AWS_REGION="${AWS_REGION:-}" \
+    "$binary" --config "$cfg" >/dev/null 2>&1 &
   local pid=$!
   PIDS="$PIDS $pid"
 
@@ -152,6 +156,7 @@ cleanup() {
     kill "$pid" 2>/dev/null || true
     wait "$pid" 2>/dev/null || true
   done
+  docker rm -f shroudb-test-minio 2>/dev/null || true
   rm -rf "$DATA_DIR"
 }
 
@@ -160,6 +165,35 @@ if [[ "$KEEP_SERVER" == "false" ]]; then
 fi
 
 echo "=== Starting servers ==="
+
+# Start MinIO if stash is in the available engines and docker is available.
+MINIO_PORT=""
+if echo "$AVAILABLE_ENGINES" | grep -q "stash" && command -v docker &>/dev/null; then
+  MINIO_PORT=$(find_free_port 19000)
+  echo "  Starting MinIO on port $MINIO_PORT..."
+  docker rm -f shroudb-test-minio 2>/dev/null || true
+  docker run -d --name shroudb-test-minio \
+    -p "127.0.0.1:${MINIO_PORT}:9000" \
+    -e MINIO_ROOT_USER=minioadmin \
+    -e MINIO_ROOT_PASSWORD=minioadmin \
+    minio/minio server /data >/dev/null 2>&1
+
+  # Wait for MinIO and create test bucket.
+  for _ in $(seq 1 30); do
+    if python3 -c "import socket; s=socket.socket(); s.settimeout(0.5); exit(0 if s.connect_ex(('127.0.0.1',$MINIO_PORT))==0 else 1)" 2>/dev/null; then
+      break
+    fi
+    sleep 0.2
+  done
+  # Create the stash-test bucket.
+  # Wait a bit for MinIO to fully initialize, then use mc inside the container.
+  sleep 1
+  docker exec shroudb-test-minio sh -c 'mc alias set local http://localhost:9000 minioadmin minioadmin && mc mb --ignore-existing local/stash-test' 2>/dev/null || true
+  echo "  MinIO ready on port $MINIO_PORT"
+  export AWS_ACCESS_KEY_ID=minioadmin
+  export AWS_SECRET_ACCESS_KEY=minioadmin
+  export AWS_REGION=us-east-1
+fi
 
 for engine in $AVAILABLE_ENGINES; do
   port=$(find_free_port 16000)

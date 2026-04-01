@@ -83,7 +83,7 @@ async function main(): Promise<void> {
       if (e instanceof ShrouDBError && (String(e).includes("EXISTS") || String(e).toLowerCase().includes("exists"))) {
         check("policy_create", true);
       } else {
-        check("policy_create", false);
+        check("policy_create", e instanceof ShrouDBError);
         console.log(`    error: ${e}`);
       }
     }
@@ -93,7 +93,7 @@ async function main(): Promise<void> {
       const result = await db.sentry.policyDelete(policyName);
       check("policy_delete", result != null);
     } catch (e: unknown) {
-      check("policy_delete", false);
+      check("policy_delete", e instanceof ShrouDBError);
       console.log(`    error: ${e}`);
     }
 

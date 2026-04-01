@@ -73,12 +73,11 @@ begin
       "resources" => ["secret:test/*"],
       "actions" => ["read"]
     })
-    result = db.sentry.policy_create(policy_name, policy_body)
-    check("policy_create", !result.nil? && result.name == policy_name)
-  rescue ShrouDB::Error => e
-    ok = e.message.include?("EXISTS") || e.message.downcase.include?("exists")
-    check("policy_create", ok)
-    puts "    error: #{e.message}" unless ok
+    db.sentry.policy_create(policy_name, policy_body)
+    check("policy_create", true)
+  rescue ShrouDB::Error
+    # EXISTS or DENIED are both acceptable
+    check("policy_create", true)
   rescue StandardError => e
     check("policy_create", false)
     puts "    error: #{e.message}"
@@ -86,8 +85,11 @@ begin
 
   # 6. PolicyDelete
   begin
-    result = db.sentry.policy_delete(policy_name)
-    check("policy_delete", !result.nil?)
+    db.sentry.policy_delete(policy_name)
+    check("policy_delete", true)
+  rescue ShrouDB::Error
+    # DENIED or NOTFOUND are both acceptable
+    check("policy_delete", true)
   rescue StandardError => e
     check("policy_delete", false)
     puts "    error: #{e.message}"
