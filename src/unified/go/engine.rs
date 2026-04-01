@@ -19,6 +19,7 @@ fn gen_engine_file(engine: &EngineIR) -> GeneratedFile {
     out.push_str("package shroudb\n\n");
     out.push_str("import (\n");
     out.push_str("\t\"context\"\n");
+    out.push_str("\t\"encoding/base64\"\n");
     out.push_str("\t\"encoding/json\"\n");
     out.push_str("\t\"fmt\"\n");
     out.push_str(")\n\n");
@@ -68,7 +69,11 @@ fn gen_command_method(out: &mut String, engine: &EngineIR, cmd: &CommandIR) {
     // Build parameter list.
     let mut params = vec!["ctx context.Context".to_string()];
     for p in &cmd.positional_params {
-        let go_type = resolve_go_type(engine, &p.type_key);
+        let go_type = if engine.is_base64_type(&p.type_key) {
+            "[]byte".to_string()
+        } else {
+            resolve_go_type(engine, &p.type_key)
+        };
         params.push(format!("{} {go_type}", safe_go_param(&p.name)));
     }
     if !cmd.named_params.is_empty() {
@@ -115,15 +120,26 @@ fn gen_command_method(out: &mut String, engine: &EngineIR, cmd: &CommandIR) {
         let name = safe_go_param(&p.name);
         // Guard optional positional params.
         if !p.required {
-            let go_type = resolve_go_type(engine, &p.type_key);
+            let go_type = if engine.is_base64_type(&p.type_key) {
+                "[]byte".to_string()
+            } else {
+                resolve_go_type(engine, &p.type_key)
+            };
             let zero_check = match go_type.as_str() {
                 "string" => format!("{name} != \"\""),
                 "int" => format!("{name} != 0"),
                 "bool" => name.to_string(),
+                "[]byte" => format!("len({name}) > 0"),
                 _ => format!("{name} != nil"),
             };
             writeln!(out, "\tif {zero_check} {{").unwrap();
-            if is_string_like(&p.type_key) {
+            if engine.is_base64_type(&p.type_key) {
+                writeln!(
+                    out,
+                    "\t\targs = append(args, base64.StdEncoding.EncodeToString({name}))"
+                )
+                .unwrap();
+            } else if is_string_like(&p.type_key) {
                 writeln!(out, "\t\targs = append(args, {name})").unwrap();
             } else if p.type_key == "json" || p.type_key == "map" {
                 writeln!(out, "\t\tjsonBytes, _ := json.Marshal({name})").unwrap();
@@ -162,6 +178,13 @@ fn gen_command_method(out: &mut String, engine: &EngineIR, cmd: &CommandIR) {
             }
             out.push_str("\t}\n");
             writeln!(out, "\targs = append(args, string({name}JSON))").unwrap();
+        } else if engine.is_base64_type(&p.type_key) {
+            // Auto-encode []byte to base64 for the wire protocol.
+            writeln!(
+                out,
+                "\targs = append(args, base64.StdEncoding.EncodeToString({name}))"
+            )
+            .unwrap();
         } else if is_string_like(&p.type_key) {
             writeln!(out, "\targs = append(args, {name})").unwrap();
         } else {

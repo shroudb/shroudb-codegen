@@ -79,7 +79,11 @@ fn gen_command_method(out: &mut String, engine: &EngineIR, cmd: &CommandIR) {
     // Build parameter list.
     let mut params = Vec::new();
     for p in &cmd.positional_params {
-        let ts_type = resolve_ts_type(engine, &p.type_key);
+        let ts_type = if engine.is_base64_type(&p.type_key) {
+            "string | Uint8Array".to_string()
+        } else {
+            resolve_ts_type(engine, &p.type_key)
+        };
         let safe_name = ts_safe_name(&p.name);
         if p.required {
             params.push(format!("{safe_name}: {ts_type}"));
@@ -143,6 +147,13 @@ fn gen_command_method(out: &mut String, engine: &EngineIR, cmd: &CommandIR) {
             writeln!(
                 out,
                 "{guard}args.push(typeof {safe_name} === 'string' ? {safe_name} : JSON.stringify({safe_name}));"
+            )
+            .unwrap();
+        } else if engine.is_base64_type(&p.type_key) {
+            // Auto-encode to base64 if the user passes raw data.
+            writeln!(
+                out,
+                "{guard}args.push(typeof {safe_name} === 'string' ? {safe_name} : Buffer.from({safe_name}).toString('base64'));"
             )
             .unwrap();
         } else {

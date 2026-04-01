@@ -28,8 +28,9 @@ async def main():
     uri = os.environ.get("SHROUDB_CIPHER_TEST_URI", "shroudb-cipher://127.0.0.1:6599")
     db = ShrouDB(cipher=uri)
 
-    plaintext_b64 = base64.b64encode(b"hello world").decode()
-    data_b64 = base64.b64encode(b"sign this message").decode()
+    # Pass raw bytes — the SDK auto-encodes to base64.
+    plaintext_raw = b"hello world"
+    data_raw = b"sign this message"
 
     try:
         # health
@@ -51,7 +52,7 @@ async def main():
         # encrypt
         ciphertext = None
         try:
-            result = await db.cipher.encrypt("test-aes", plaintext_b64)
+            result = await db.cipher.encrypt("test-aes", plaintext_raw)
             ciphertext = result.ciphertext
             check("encrypt", ciphertext is not None and len(ciphertext) > 0)
         except Exception as e:
@@ -62,7 +63,9 @@ async def main():
         if ciphertext:
             try:
                 result = await db.cipher.decrypt("test-aes", ciphertext)
-                check("decrypt", result.plaintext == plaintext_b64)
+                # Response plaintext is base64-encoded; decode and compare.
+                decrypted = base64.b64decode(result.plaintext) if result.plaintext else b""
+                check("decrypt", decrypted == plaintext_raw)
             except Exception as e:
                 check("decrypt", False)
                 print(f"    error: {e}")
@@ -93,7 +96,7 @@ async def main():
         # sign
         signature = None
         try:
-            result = await db.cipher.sign("test-ed25519", data_b64)
+            result = await db.cipher.sign("test-ed25519", data_raw)
             signature = result.signature
             check("sign", signature is not None and len(signature) > 0)
         except Exception as e:
@@ -103,7 +106,7 @@ async def main():
         # verify_signature
         if signature:
             try:
-                result = await db.cipher.verify_signature("test-ed25519", data_b64, signature)
+                result = await db.cipher.verify_signature("test-ed25519", data_raw, signature)
                 check("verify_signature", result.valid is True or str(result.valid).lower() == "true")
             except Exception as e:
                 check("verify_signature", False)
@@ -128,12 +131,14 @@ async def main():
             check("key_info", False)
             print(f"    error: {e}")
 
-        # error_notfound
+        # error_notfound — verify structured error code is inferred
         try:
-            await db.cipher.encrypt("nonexistent-keyring-xyz", plaintext_b64)
+            await db.cipher.encrypt("nonexistent-keyring-xyz", plaintext_raw)
             check("error_notfound", False)
-        except ShrouDBError:
-            check("error_notfound", True)
+        except ShrouDBError as e:
+            check("error_notfound", e.code == "NOTFOUND")
+            if e.code != "NOTFOUND":
+                print(f"    expected code=NOTFOUND, got code={e.code}: {e}")
         except Exception as e:
             check("error_notfound", False)
             print(f"    unexpected error type: {type(e).__name__}: {e}")

@@ -34,12 +34,20 @@ pub struct EngineIR {
     pub commands: Vec<CommandIR>,
     pub types: BTreeMap<String, TypeIR>,
     pub error_codes: BTreeMap<String, ErrorCodeIR>,
+
     /// Whether this engine exposes an HTTP REST API.
     pub has_http_api: bool,
     /// HTTP port (if the engine has an HTTP API).
     pub http_port: Option<u16>,
     /// HTTP base path (e.g., "/sigil").
     pub http_base_path: Option<String>,
+}
+
+impl EngineIR {
+    /// Check if a type key refers to a base64-encoded wire type.
+    pub fn is_base64_type(&self, type_key: &str) -> bool {
+        self.types.get(type_key).is_some_and(|t| t.base64)
+    }
 }
 
 /// A normalized command.
@@ -88,6 +96,8 @@ pub struct TypeIR {
     pub typescript_type: String,
     pub go_type: String,
     pub ruby_type: String,
+    /// Whether this type is base64-encoded on the wire.
+    pub base64: bool,
 }
 
 pub struct ErrorCodeIR {
@@ -796,6 +806,8 @@ fn parse_type_def(val: &toml::Value) -> Option<TypeIR> {
         .unwrap_or("")
         .to_string();
 
+    let base64 = desc.to_lowercase().contains("base64");
+
     Some(TypeIR {
         description: desc,
         wire_type: t
@@ -823,6 +835,7 @@ fn parse_type_def(val: &toml::Value) -> Option<TypeIR> {
             .and_then(|v| v.as_str())
             .map(String::from)
             .unwrap_or_else(|| infer_ruby_type(t)),
+        base64,
     })
 }
 

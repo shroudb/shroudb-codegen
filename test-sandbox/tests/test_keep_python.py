@@ -29,8 +29,9 @@ async def main():
     uri = os.environ.get("SHROUDB_KEEP_TEST_URI", "shroudb-keep://127.0.0.1:6399")
     db = ShrouDB(keep=uri)
 
-    secret_value = base64.b64encode(b"s3cret-passw0rd").decode()
-    secret_value_v2 = base64.b64encode(b"updated-s3cret").decode()
+    # Pass raw bytes — the SDK auto-encodes to base64.
+    secret_value = b"s3cret-passw0rd"
+    secret_value_v2 = b"updated-s3cret"
     test_path = "db/test/secret"
 
     try:
@@ -111,13 +112,15 @@ async def main():
             check("delete", False)
             print(f"    error: {e}")
 
-        # error_deleted
+        # error_deleted — verify structured error code
         try:
             await db.keep.get(test_path)
             check("error_deleted", False)
             print("    expected ShrouDBError but succeeded")
         except ShrouDBError as e:
-            check("error_deleted", True)
+            check("error_deleted", e.code in ("DELETED", "NOTFOUND"))
+            if e.code not in ("DELETED", "NOTFOUND"):
+                print(f"    expected code=DELETED or NOTFOUND, got code={e.code}: {e}")
         except Exception as e:
             check("error_deleted", False)
             print(f"    unexpected error type: {type(e).__name__}: {e}")
