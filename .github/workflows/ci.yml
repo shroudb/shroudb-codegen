@@ -13,3 +13,56 @@ jobs:
       deny: false
     secrets:
       REGISTRY_TOKEN: ${{ secrets.REGISTRY_TOKEN }}
+
+  generate-check:
+    name: Verify SDK generation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Build codegen
+        run: cargo build --release
+
+      - name: Clone engine specs
+        run: |
+          # Clone all repos so the Moat composite spec can resolve relative paths.
+          cd ..
+          for repo in shroudb shroudb-cipher shroudb-sigil shroudb-forge shroudb-sentry \
+                      shroudb-keep shroudb-courier shroudb-chronicle shroudb-veil shroudb-moat; do
+            gh repo clone "shroudb/$repo" -- --depth 1 2>/dev/null || true
+          done
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+
+      - name: Generate all SDKs
+        run: |
+          ./target/release/shroudb-codegen \
+            --spec ../shroudb-moat/protocol.toml \
+            --lang all \
+            --output /tmp/sdk-output
+
+      - name: Verify TypeScript compiles
+        run: |
+          cd /tmp/sdk-output/typescript
+          npm install --ignore-scripts
+          npx tsc --noEmit
+
+      - name: Verify Python syntax
+        run: python3 -m py_compile /tmp/sdk-output/python/shroudb/__init__.py
+
+      - name: Verify Go compiles
+        run: |
+          cd /tmp/sdk-output/go
+          go build ./...

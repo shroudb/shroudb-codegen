@@ -41,6 +41,13 @@ fn gen_package_json(ir: &UnifiedIR) -> GeneratedFile {
     "prepublishOnly": "npm run build",
     "postinstall": "node postinstall.js"
   }},
+  "repository": {{
+    "type": "git",
+    "url": "https://github.com/shroudb/shroudb-sdk-typescript.git"
+  }},
+  "publishConfig": {{
+    "registry": "https://npm.pkg.github.com"
+  }},
   "license": "MIT",
   "engines": {{
     "node": ">=18"
