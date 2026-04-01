@@ -2,3 +2,4 @@
 /test-sandbox/generated/
 /test-sandbox/.tmp/
 /test-sandbox/data/
+/test-sandbox/*-data/

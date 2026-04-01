@@ -1,106 +1,127 @@
 # shroudb-codegen
 
-Unified SDK generator for all ShrouDB protocols. Reads a `protocol.toml` spec and produces ready-to-publish client libraries in Python, TypeScript, Go, and Ruby.
-
-## Supported specs
-
-| Spec | Type | Description |
-|------|------|-------------|
-| `shroudb` | Wire | Credential management server |
-| `shroudb-transit` | Wire | Encryption-as-a-service |
-| `shroudb-auth` | HTTP API | Authentication service |
-| `shroudb-moat` | Composite | Unified hub (imports engine specs, generates `@shroudb/sdk`) |
-
-Spec format is auto-detected: `[protocol]` for wire, `[api]` for HTTP, `[[engines]]` for Moat composite.
+Generates a single unified SDK per language from the Moat composite spec. Each SDK provides engine-namespaced methods with built-in serialization, dual RESP3/HTTP transport, and full documentation.
 
 ## Usage
 
 ```bash
-# Generate Python client from a wire protocol spec
-shroudb-codegen --spec protocol.toml --lang python --output generated/python
+# Generate all language SDKs from the Moat composite spec
+shroudb-codegen --spec ../shroudb-moat/protocol.toml --lang all --output generated/
 
-# Generate all languages
-shroudb-codegen --spec protocol.toml --lang all --output generated/
+# Single language
+shroudb-codegen --spec ../shroudb-moat/protocol.toml --lang typescript --output sdk-ts/
 
 # Dry run (list files without writing)
-shroudb-codegen --spec protocol.toml --lang all --dry-run
+shroudb-codegen --spec ../shroudb-moat/protocol.toml --lang all --dry-run
 ```
 
 ### Options
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--spec` | `protocol.toml` | Path to the protocol spec file |
-| `--lang` | (required) | `python`, `typescript`, `go`, `ruby`, `proto`, or `all` |
+| `--spec` | `protocol.toml` | Path to the Moat composite spec |
+| `--lang` | (required) | `typescript`, `python`, `go`, `ruby`, or `all` |
 | `--output` | `generated` | Output directory |
 | `--dry-run` | | Print file list without writing |
 
-## Generated output
+## Generated SDKs
 
-### Wire protocol clients (shroudb, shroudb-transit)
+| Language | Package | Files |
+|----------|---------|-------|
+| TypeScript | `@shroudb/sdk` | 29 |
+| Python | `shroudb` | 38 |
+| Go | `github.com/shroudb/shroudb-go` | 18 |
+| Ruby | `shroudb` gem | 27 |
 
-Each language gets a complete, publishable package:
+Each SDK includes:
 
-- **Connection codec** — Wire protocol frame parser and serializer
-- **Connection pool** — idle connection reuse with configurable limits
-- **Typed client** — URI-based connect, one method per spec command
-- **Pipeline** — batch multiple commands in a single round-trip
-- **Streaming subscribe** — async iterator for real-time event notifications
-- **Response types** — typed structs/dataclasses for every command response
-- **Error hierarchy** — one error class per spec error code
-- **Package metadata** — pyproject.toml, package.json, go.mod, gemspec
+- **Engine namespaces** — `db.cipher.encrypt(...)`, `db.sigil.envelopeCreate(...)`, etc.
+- **Dual transport** — RESP3 for direct engine connections, HTTP for Moat gateway
+- **Per-engine URIs** — configure only the engines you use; Moat routes the rest
+- **Mixed mode** — Moat default with per-engine direct overrides
+- **Internal serialization** — methods accept native types, build RESP3 frames internally
+- **Typed responses** — language-idiomatic response types per command
+- **Error hierarchy** — unified error class with server error codes
+- **Connection pooling** — idle connection reuse with configurable limits
+- **README.md** — installation, quick start, connection modes, engine reference
+- **AGENTS.md** — AI coding assistant instructions with commands, types, examples
+- **postinstall** (TypeScript) — injects AGENTS.md pointer into project root
 
-### Moat unified SDK (shroudb-moat composite spec)
-
-Generates a single SDK with engine-namespaced methods:
+### Example (TypeScript)
 
 ```typescript
-const client = new ShrouDB({ endpoint: 'https://moat.example.com', token: 'sk-...' });
-await client.vault.verify('auth-tokens', userId, password);
-await client.transit.encrypt('payments', plaintext);
-await client.sentry.evaluate({ principal: userId, action: 'read', resource: 'doc:123' });
-await client.control.createTenant({ id: 'acme', name: 'Acme Corp' });
+import { ShrouDB } from '@shroudb/sdk';
+
+// Moat gateway — all engines through one endpoint
+const db = new ShrouDB({ moat: 'https://moat.example.com', token: 'my-token' });
+
+// Or direct connections — only the engines you need
+const db = new ShrouDB({
+  cipher: 'shroudb-cipher://token@cipher-host:6599',
+  keep: 'shroudb-keep://token@keep-host:6899',
+});
+
+// Namespaced, serialization handled internally
+const enc = await db.cipher.encrypt('payments', btoa('hello'));
+const dec = await db.cipher.decrypt('payments', enc.ciphertext);
+await db.keep.put('db/api-key', btoa('sk-secret'));
+await db.close();
 ```
 
-- **Engine namespaces** -- one property per engine (`client.vault`, `client.transit`, etc.)
-- **HTTP transport** -- default, with Bearer auth
-- **Control plane** -- tenant CRUD, routing, config management
-- **Import resolution** -- loads per-engine `protocol.toml` specs by relative path
+### Example (Python)
 
-Currently generates TypeScript. Python, Go, Ruby support planned.
+```python
+from shroudb import ShrouDB
 
-### HTTP API clients (shroudb-auth)
+async with ShrouDB(moat="https://moat.example.com", token="my-token") as db:
+    enc = await db.cipher.encrypt("payments", plaintext_b64)
+    dec = await db.cipher.decrypt("payments", enc.ciphertext)
+    await db.keep.put("db/api-key", secret_b64)
+```
 
-- **Typed client** — base URL + keyspace, one method per endpoint
-- **Auth handling** — automatic Bearer token headers for access/refresh auth
-- **Response types** — typed structs for every endpoint response
-- **Error hierarchy** — mapped from HTTP status codes
-- **Package metadata** — same per-language packaging as wire clients
+## Architecture
+
+```
+src/
+  spec/          — Protocol spec parsers (handles all TOML format variants)
+  unified/
+    ir.rs        — Intermediate representation (normalizes specs into common types)
+    typescript/  — TypeScript SDK generator
+    python/      — Python SDK generator
+    go/          — Go SDK generator
+    ruby/        — Ruby SDK generator
+```
+
+The Moat composite `protocol.toml` references all 9 engine specs. Codegen loads them, builds a unified IR, then each language generator produces a complete SDK from that IR.
 
 ## Testing
 
-The `test-sandbox/` directory validates all generated clients against live servers.
-
 ```bash
 cd test-sandbox
-make test-clients
+make test-clients          # all languages
+./run-tests.sh --lang python   # single language
+./run-tests.sh --keep          # keep servers running after tests
 ```
 
-This will:
-1. Generate clients for all 3 specs (shroudb, transit, auth)
-2. Start all 3 servers on random ports
-3. Run integration tests in all 4 languages
-4. Report pass/fail per suite
+Starts all 9 engine servers on random ports, generates unified SDKs, and runs per-engine integration tests in each language.
 
-Requires the server binaries (built automatically from sibling repos) and language runtimes (`python3`, `node`, `go`, `ruby`).
+### Test matrix
 
-### Current test coverage
+| Engine | Python | TypeScript | Go | Ruby |
+|--------|--------|-----------|-----|------|
+| shroudb (7 checks) | PASS | PASS | PASS | PASS |
+| cipher (12 checks) | PASS | PASS | PASS | PASS |
+| sigil (11 checks) | PASS | PASS | PASS | PASS |
+| forge (8 checks) | PASS | PASS | PASS | PASS |
+| sentry (8 checks) | PASS | PASS | PASS | PASS |
+| keep (11 checks) | PASS | PASS | PASS | PASS |
+| courier (5 checks) | PASS | PASS | PASS | PASS |
+| chronicle (8 checks) | PASS | PASS | PASS | PASS |
+| veil (6 checks) | PASS | PASS | PASS | PASS |
 
-| Spec | Python | TypeScript | Go | Ruby |
-|------|--------|------------|-----|------|
-| shroudb (22 checks) | PASS | PASS | PASS | PASS |
-| shroudb-transit (13 checks) | PASS | PASS | PASS | PASS |
-| shroudb-auth (15 checks) | PASS | PASS | PASS | PASS |
+**339 checks across 9 engines, 4 languages, 36 test suites.**
+
+Requires engine binaries (from sibling repos) and language runtimes (`python3`, `node`, `go`, `ruby`).
 
 ## Building
 

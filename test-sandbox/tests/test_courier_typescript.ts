@@ -1,12 +1,11 @@
 /**
- * ShrouDB Courier TypeScript client integration test.
+ * ShrouDB unified SDK — Courier engine integration test.
  *
- * Limited test -- no Transit available, so DELIVER is skipped.
- * Tests management commands only: TEMPLATE_LIST, TEMPLATE_INFO, HEALTH.
+ * Tests delivery management: channel listing and health.
  */
 
-import { ShroudbCourierClient } from "./src/index.js";
-import { ShroudbCourierError } from "./src/errors.js";
+import { ShrouDB } from "./src/index.js";
+import { ShrouDBError } from "./src/errors.js";
 
 let passed = 0;
 let failed = 0;
@@ -23,39 +22,54 @@ function check(name: string, condition: boolean): void {
 
 async function main(): Promise<void> {
   const uri =
-    process.env.SHROUDB_COURIER_TEST_URI ?? "shroudb-courier://127.0.0.1:6899";
-  const client = await ShroudbCourierClient.connect(uri);
+    process.env.SHROUDB_COURIER_TEST_URI ??
+    "shroudb-courier://127.0.0.1:6899";
+  const db = new ShrouDB({ courier: uri });
 
   try {
     // 1. Health
-    await client.health();
+    await db.courier.health();
     check("health", true);
 
-    // 2. TEMPLATE_LIST
+    // 2. CHANNEL_LIST
     try {
-      await client.templateList();
-      check("template_list", true);
+      await db.courier.channelList();
+      check("channel_list", true);
     } catch (e: unknown) {
-      if (e instanceof TypeError || (e instanceof Error && e.message.includes("key"))) {
-        check("template_list", true);
+      if (
+        e instanceof TypeError ||
+        (e instanceof Error && e.message.includes("key"))
+      ) {
+        check("channel_list", true);
       } else {
         throw e;
       }
     }
-
-    // 3. Error: TEMPLATE_INFO nonexistent
+    // 3. CHANNEL_CREATE
+    const channelName = `test-channel-${Math.floor(Date.now() % 10000)}`;
     try {
-      await client.templateInfo("nonexistent");
-      check("error_notfound", false);
+      const config = JSON.stringify({ url: "https://example.com/webhook" });
+      const result = await db.courier.channelCreate(channelName, "webhook", config);
+      check("channel_create", result != null && result.name === channelName);
     } catch (e: unknown) {
-      if (e instanceof ShroudbCourierError) {
-        check("error_notfound", true);
+      if (e instanceof ShrouDBError && (String(e).includes("EXISTS") || String(e).toLowerCase().includes("exists"))) {
+        check("channel_create", true);
       } else {
-        check("error_notfound", false);
+        check("channel_create", false);
+        console.log(`    error: ${e}`);
       }
     }
+
+    // 4. CHANNEL_DELETE
+    try {
+      const result = await db.courier.channelDelete(channelName);
+      check("channel_delete", result != null);
+    } catch (e: unknown) {
+      check("channel_delete", false);
+      console.log(`    error: ${e}`);
+    }
   } finally {
-    client.close();
+    await db.close();
     check("close", true);
   }
 

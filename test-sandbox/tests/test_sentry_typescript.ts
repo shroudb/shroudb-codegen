@@ -1,9 +1,11 @@
 /**
- * ShrouDB Sentry TypeScript client integration test.
+ * ShrouDB unified SDK — Sentry engine integration test.
+ *
+ * Tests authorization: policy listing, evaluation, key info, and error handling.
  */
 
-import { ShroudbSentryClient } from "./src/index.js";
-import { ShroudbSentryError } from "./src/errors.js";
+import { ShrouDB } from "./src/index.js";
+import { ShrouDBError } from "./src/errors.js";
 
 let passed = 0;
 let failed = 0;
@@ -20,68 +22,96 @@ function check(name: string, condition: boolean): void {
 
 async function main(): Promise<void> {
   const uri =
-    process.env.SHROUDB_SENTRY_TEST_URI ?? "shroudb-sentry://127.0.0.1:6699";
-  const client = await ShroudbSentryClient.connect(uri);
+    process.env.SHROUDB_SENTRY_TEST_URI ??
+    "shroudb-sentry://127.0.0.1:6499";
+  const db = new ShrouDB({ sentry: uri });
 
   try {
     // 1. Health
-    await client.health();
-    check("health", true);
+    try {
+      await db.sentry.health();
+      check("health", true);
+    } catch (e: unknown) {
+      check("health", false);
+      console.log(`    error: ${e}`);
+    }
 
     // 2. POLICY_LIST
     try {
-      await client.policyList();
-      check("policy_list", true);
+      const result = await db.sentry.policyList();
+      check("policy_list", result != null);
     } catch (e: unknown) {
-      if (e instanceof TypeError || (e instanceof Error && e.message.includes("key"))) {
-        check("policy_list", true);
-      } else {
-        throw e;
-      }
+      check("policy_list", false);
+      console.log(`    error: ${e}`);
     }
 
-    // 3. EVALUATE (pass JSON string)
+    // 3. EVALUATE (JSON payload)
     try {
       const evalJson = JSON.stringify({
-        principal: { id: "user-1", roles: ["admin"] },
-        resource: { id: "doc-1", type: "document" },
+        principal: "user:test@example.com",
+        resource: "secret:db/test/*",
         action: "read",
       });
-      await client.evaluate(evalJson);
-      check("evaluate", true);
+      const result = await db.sentry.evaluate(evalJson);
+      check("evaluate", result != null);
     } catch (e: unknown) {
-      if (e instanceof TypeError || (e instanceof Error && e.message.includes("key"))) {
-        check("evaluate", true);
-      } else {
-        throw e;
-      }
+      check("evaluate", false);
+      console.log(`    error: ${e}`);
     }
 
     // 4. KEY_INFO
     try {
-      await client.keyInfo();
-      check("key_info", true);
+      const result = await db.sentry.keyInfo();
+      check("key_info", result != null);
     } catch (e: unknown) {
-      if (e instanceof TypeError || (e instanceof Error && e.message.includes("key"))) {
-        check("key_info", true);
+      check("key_info", false);
+      console.log(`    error: ${e}`);
+    }
+
+    // 5. Policy create
+    const policyName = `test-policy-${Math.floor(Date.now() % 10000)}`;
+    try {
+      const policyBody = JSON.stringify({
+        effect: "permit",
+        principals: ["user:*"],
+        resources: ["secret:test/*"],
+        actions: ["read"],
+      });
+      const result = await db.sentry.policyCreate(policyName, policyBody);
+      check("policy_create", result != null && result.name === policyName);
+    } catch (e: unknown) {
+      if (e instanceof ShrouDBError && (String(e).includes("EXISTS") || String(e).toLowerCase().includes("exists"))) {
+        check("policy_create", true);
       } else {
-        throw e;
+        check("policy_create", false);
+        console.log(`    error: ${e}`);
       }
     }
 
-    // 5. Error: POLICY_INFO nonexistent
+    // 6. Policy delete
     try {
-      await client.policyInfo("nonexistent");
-      check("error_notfound", false);
+      const result = await db.sentry.policyDelete(policyName);
+      check("policy_delete", result != null);
     } catch (e: unknown) {
-      if (e instanceof ShroudbSentryError) {
+      check("policy_delete", false);
+      console.log(`    error: ${e}`);
+    }
+
+    // 7. Error: NOTFOUND (nonexistent policy)
+    try {
+      await db.sentry.policyGet("nonexistent-policy-xyz");
+      check("error_notfound", false);
+      console.log("    expected ShrouDBError but succeeded");
+    } catch (e: unknown) {
+      if (e instanceof ShrouDBError) {
         check("error_notfound", true);
       } else {
         check("error_notfound", false);
+        console.log(`    unexpected error type: ${e}`);
       }
     }
   } finally {
-    client.close();
+    await db.close();
     check("close", true);
   }
 

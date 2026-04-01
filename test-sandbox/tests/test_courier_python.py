@@ -1,17 +1,14 @@
-"""ShrouDB Courier Python client integration test.
-
-Limited test — no Transit available, so DELIVER is skipped.
-Tests management commands only: TEMPLATE_LIST, TEMPLATE_INFO, HEALTH.
-"""
+"""ShrouDB Courier unified SDK integration test."""
 
 import asyncio
+import json
 import os
 import sys
 
 sys.path.insert(0, ".")
 
-from shroudb_courier.client import ShroudbCourierClient
-from shroudb_courier.errors import ShroudbCourierError
+from shroudb import ShrouDB
+from shroudb.errors import ShrouDBError
 
 passed = 0
 failed = 0
@@ -28,32 +25,53 @@ def check(name, condition):
 
 
 async def main():
-    uri = os.environ.get(
-        "SHROUDB_COURIER_TEST_URI", "shroudb-courier://127.0.0.1:6899"
-    )
-    client = await ShroudbCourierClient.connect(uri)
+    global passed, failed
+    uri = os.environ.get("SHROUDB_COURIER_TEST_URI", "shroudb-courier://127.0.0.1:6799")
+    db = ShrouDB(courier=uri)
 
     try:
-        # 1. Health
-        await client.health()
-        check("health", True)
-
-        # 2. TEMPLATE_LIST
+        # health
         try:
-            await client.template_list()
-            check("template_list", True)
-        except (KeyError, AttributeError):
-            check("template_list", True)
+            result = await db.courier.health()
+            check("health", result is not None)
+        except Exception as e:
+            check("health", False)
+            print(f"    error: {e}")
 
-        # 3. Error: TEMPLATE_INFO nonexistent
+        # channel_list
         try:
-            await client.template_info("nonexistent")
-            check("error_notfound", False)
-        except ShroudbCourierError:
-            check("error_notfound", True)
+            result = await db.courier.channel_list()
+            check("channel_list", result is not None)
+        except Exception as e:
+            check("channel_list", False)
+            print(f"    error: {e}")
+
+        # channel_create
+        import time
+        channel_name = f"test-channel-{int(time.time()) % 10000}"
+        try:
+            config = json.dumps({"url": "https://example.com/webhook"})
+            result = await db.courier.channel_create(channel_name, "webhook", config)
+            check("channel_create", result is not None and result.name == channel_name)
+        except ShrouDBError as e:
+            ok = "EXISTS" in str(e) or "exists" in str(e).lower()
+            check("channel_create", ok)
+            if not ok:
+                print(f"    error: {e}")
+        except Exception as e:
+            check("channel_create", False)
+            print(f"    error: {e}")
+
+        # channel_delete
+        try:
+            result = await db.courier.channel_delete(channel_name)
+            check("channel_delete", result is not None)
+        except Exception as e:
+            check("channel_delete", False)
+            print(f"    error: {e}")
 
     finally:
-        await client.close()
+        await db.close()
         check("close", True)
 
     print(f"\n{passed} passed, {failed} failed")

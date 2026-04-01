@@ -1,14 +1,15 @@
-"""ShrouDB Sentry Python client integration test."""
+"""ShrouDB Sentry unified SDK integration test."""
 
 import asyncio
 import json
 import os
 import sys
+import time
 
 sys.path.insert(0, ".")
 
-from shroudb_sentry.client import ShroudbSentryClient
-from shroudb_sentry.errors import ShroudbSentryError
+from shroudb import ShrouDB
+from shroudb.errors import ShrouDBError
 
 passed = 0
 failed = 0
@@ -25,51 +26,90 @@ def check(name, condition):
 
 
 async def main():
-    uri = os.environ.get(
-        "SHROUDB_SENTRY_TEST_URI", "shroudb-sentry://127.0.0.1:6699"
-    )
-    client = await ShroudbSentryClient.connect(uri)
+    global passed, failed
+    uri = os.environ.get("SHROUDB_SENTRY_TEST_URI", "shroudb-sentry://127.0.0.1:6499")
+    db = ShrouDB(sentry=uri)
 
     try:
-        # 1. Health
-        await client.health()
-        check("health", True)
-
-        # 2. POLICY_LIST
+        # health
         try:
-            await client.policy_list()
-            check("policy_list", True)
-        except (KeyError, AttributeError):
-            check("policy_list", True)
+            result = await db.sentry.health()
+            check("health", result is not None)
+        except Exception as e:
+            check("health", False)
+            print(f"    error: {e}")
 
-        # 3. EVALUATE (pass JSON string matching EvaluationRequest schema)
+        # policy_list
         try:
-            eval_json = json.dumps({
-                "principal": {"id": "user-1", "roles": ["admin"]},
-                "resource": {"id": "doc-1", "type": "document"},
+            result = await db.sentry.policy_list()
+            check("policy_list", result is not None)
+        except Exception as e:
+            check("policy_list", False)
+            print(f"    error: {e}")
+
+        # evaluate
+        try:
+            eval_request = json.dumps({
+                "principal": "user:test@example.com",
+                "resource": "secret:db/test/*",
                 "action": "read",
             })
-            result = await client.evaluate(eval_json)
-            check("evaluate", True)
-        except (KeyError, AttributeError):
-            check("evaluate", True)
+            result = await db.sentry.evaluate(eval_request)
+            decision = getattr(result, "decision", None) or getattr(result, "allowed", None)
+            check("evaluate", decision is not None)
+        except Exception as e:
+            check("evaluate", False)
+            print(f"    error: {e}")
 
-        # 4. KEY_INFO
+        # key_info
         try:
-            await client.key_info()
-            check("key_info", True)
-        except (KeyError, AttributeError):
-            check("key_info", True)
+            result = await db.sentry.key_info()
+            check("key_info", result is not None)
+        except Exception as e:
+            check("key_info", False)
+            print(f"    error: {e}")
 
-        # 5. Error: POLICY_INFO nonexistent
+        # policy_create
+        policy_name = f"test-policy-{int(time.time()) % 10000}"
         try:
-            await client.policy_info("nonexistent")
+            policy_body = json.dumps({
+                "effect": "permit",
+                "principals": ["user:*"],
+                "resources": ["secret:test/*"],
+                "actions": ["read"],
+            })
+            result = await db.sentry.policy_create(policy_name, policy_body)
+            check("policy_create", result is not None and result.name == policy_name)
+        except ShrouDBError as e:
+            ok = "EXISTS" in str(e) or "exists" in str(e).lower()
+            check("policy_create", ok)
+            if not ok:
+                print(f"    error: {e}")
+        except Exception as e:
+            check("policy_create", False)
+            print(f"    error: {e}")
+
+        # policy_delete
+        try:
+            result = await db.sentry.policy_delete(policy_name)
+            check("policy_delete", result is not None)
+        except Exception as e:
+            check("policy_delete", False)
+            print(f"    error: {e}")
+
+        # error: policy_get on nonexistent
+        try:
+            await db.sentry.policy_get("nonexistent-policy-xyz")
             check("error_notfound", False)
-        except ShroudbSentryError:
+            print("    expected ShrouDBError but succeeded")
+        except ShrouDBError as e:
             check("error_notfound", True)
+        except Exception as e:
+            check("error_notfound", False)
+            print(f"    unexpected error type: {type(e).__name__}: {e}")
 
     finally:
-        await client.close()
+        await db.close()
         check("close", True)
 
     print(f"\n{passed} passed, {failed} failed")

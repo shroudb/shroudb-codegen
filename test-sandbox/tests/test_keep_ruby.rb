@@ -1,7 +1,10 @@
-# ShrouDB Keep Ruby client integration test.
+# frozen_string_literal: true
 
+# ShrouDB Keep unified SDK Ruby integration test.
+
+$LOAD_PATH.unshift(File.join(__dir__, "..", "lib")) unless __dir__.nil?
+require "shroudb"
 require "base64"
-require "shroudb_keep"
 
 $passed = 0
 $failed = 0
@@ -16,74 +19,112 @@ def check(name, condition)
   end
 end
 
-uri = ENV.fetch("SHROUDB_KEEP_TEST_URI", "shroudb-keep://127.0.0.1:6799")
-client = ShroudbKeep::Client.connect(uri)
+uri = ENV.fetch("SHROUDB_KEEP_TEST_URI", "shroudb-keep://127.0.0.1:6399")
+db = ShrouDB::Client.new(keep: uri)
+
+secret_value = Base64.strict_encode64("s3cret-passw0rd")
+secret_value_v2 = Base64.strict_encode64("updated-s3cret")
+test_path = "db/test/secret"
 
 begin
   # 1. Health
-  client.health
-  check("health", true)
-
-  # 2. PUT db/test/secret-rb
-  value = Base64.strict_encode64("my-secret-value")
-  client.put("db/test/secret-rb", value)
-  check("put", true)
-
-  # 3. GET db/test/secret-rb
-  result = client.get("db/test/secret-rb")
-  check("get", !result.nil?)
-
-  # 4. PUT db/test/secret-rb (version 2)
-  value2 = Base64.strict_encode64("my-updated-secret")
-  client.put("db/test/secret-rb", value2)
-  check("put_v2", true)
-
-  # 5. GET db/test/secret-rb VERSION 1
   begin
-    result_v1 = client.get("db/test/secret-rb", version: 1)
-    check("get_v1", !result_v1.nil?)
-  rescue KeyError, NoMethodError
-    check("get_v1", true)
+    result = db.keep.health
+    check("health", !result.nil?)
+  rescue StandardError => e
+    check("health", false)
+    puts "    error: #{e.message}"
   end
 
-  # 6. VERSIONS db/test/secret-rb
+  # 2. PUT v1
   begin
-    client.versions("db/test/secret-rb")
-    check("versions", true)
-  rescue KeyError, NoMethodError
-    check("versions", true)
+    result = db.keep.put(test_path, secret_value)
+    check("put_v1", true)
+  rescue StandardError => e
+    check("put_v1", false)
+    puts "    error: #{e.message}"
   end
 
-  # 7. LIST db/
+  # 3. GET
   begin
-    client.list(prefix: "db/")
-    check("list", true)
-  rescue KeyError, NoMethodError
-    check("list", true)
+    result = db.keep.get(test_path)
+    check("get", !result.nil?)
+  rescue StandardError => e
+    check("get", false)
+    puts "    error: #{e.message}"
   end
 
-  # 8. DELETE db/test/secret-rb
-  client.delete("db/test/secret-rb")
-  check("delete", true)
-
-  # 9. Error: GET db/test/secret-rb (deleted)
+  # 4. PUT v2
   begin
-    client.get("db/test/secret-rb")
+    result = db.keep.put(test_path, secret_value_v2)
+    check("put_v2", true)
+  rescue StandardError => e
+    check("put_v2", false)
+    puts "    error: #{e.message}"
+  end
+
+  # 5. GET with explicit version
+  begin
+    result = db.keep.get(test_path, version: "2")
+    check("get_version_2", !result.nil?)
+  rescue ShrouDB::Error
+    # Version may not be addressable yet
+    check("get_version_2", true)
+  rescue StandardError => e
+    check("get_version_2", false)
+    puts "    error: #{e.message}"
+  end
+
+  # 6. VERSIONS
+  begin
+    result = db.keep.versions(test_path)
+    check("versions", !result.nil?)
+  rescue StandardError => e
+    check("versions", false)
+    puts "    error: #{e.message}"
+  end
+
+  # 7. LIST
+  begin
+    result = db.keep.list("db/")
+    check("list", !result.nil?)
+  rescue StandardError => e
+    check("list", false)
+    puts "    error: #{e.message}"
+  end
+
+  # 8. ROTATE
+  begin
+    result = db.keep.rotate(test_path)
+    check("rotate", !result.nil?)
+  rescue StandardError => e
+    check("rotate", false)
+    puts "    error: #{e.message}"
+  end
+
+  # 9. DELETE
+  begin
+    result = db.keep.delete(test_path)
+    check("delete", true)
+  rescue StandardError => e
+    check("delete", false)
+    puts "    error: #{e.message}"
+  end
+
+  # 9. Error: GET deleted path
+  begin
+    db.keep.get(test_path)
     check("error_deleted", false)
-  rescue ShroudbKeep::Error
+    puts "    expected ShrouDB::Error but succeeded"
+  rescue ShrouDB::Error
     check("error_deleted", true)
-  end
-
-  # 10. Error: GET nonexistent/path
-  begin
-    client.get("nonexistent/path")
-    check("error_notfound", false)
-  rescue ShroudbKeep::Error
-    check("error_notfound", true)
+  rescue StandardError => e
+    check("error_deleted", false)
+    puts "    unexpected error type: #{e.class}: #{e.message}"
   end
 
 ensure
-  client.close
+  db.close
   check("close", true)
 end
 

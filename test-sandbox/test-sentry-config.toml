@@ -1,15 +1,16 @@
-# Sentry test server configuration.
-
 [server]
-bind = "127.0.0.1:{{PORT}}"
-http_bind = "127.0.0.1:{{HTTP_PORT}}"
+tcp_bind = "127.0.0.1:{{PORT}}"
 
 [storage]
 data_dir = "{{DATA_DIR}}"
 
-[signing]
-algorithm = "ES256"
+[engine]
+signing_algorithm = "ES256"
 
-[policies]
-dir = "{{DATA_DIR}}/policies"
-default_decision = "deny"
+[policies.test-permit]
+effect = "allow"
+description = "Test policy: admin can read documents"
+priority = 100
+principal_roles = ["admin"]
+resource_type = "document"
+action_names = ["read"]

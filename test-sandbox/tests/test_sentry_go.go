@@ -1,18 +1,21 @@
-// ShrouDB Sentry Go client integration test.
+// ShrouDB Sentry unified SDK Go integration test.
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
+	"time"
 
-	shroudb_sentry "github.com/shroudb/shroudb-sentry-go"
+	shroudb "github.com/shroudb/shroudb-go"
 )
 
 var passed, failed int
 
-func check(name string, condition bool) {
-	if condition {
+func check(name string, ok bool) {
+	if ok {
 		passed++
 		fmt.Printf("  PASS  %s\n", name)
 	} else {
@@ -22,48 +25,87 @@ func check(name string, condition bool) {
 }
 
 func main() {
+	ctx := context.Background()
 	uri := os.Getenv("SHROUDB_SENTRY_TEST_URI")
 	if uri == "" {
-		uri = "shroudb-sentry://127.0.0.1:6699"
+		uri = "shroudb-sentry://127.0.0.1:6499"
 	}
 
-	client, err := shroudb_sentry.Connect(uri)
+	db, err := shroudb.New(shroudb.Options{Sentry: uri})
 	if err != nil {
-		fmt.Printf("FATAL: cannot connect: %v\n", err)
+		fmt.Println("FAIL: connect:", err)
 		os.Exit(1)
 	}
-	defer client.Close()
+	defer func() {
+		db.Close()
+		check("close", true)
+		fmt.Printf("\n%d passed, %d failed\n", passed, failed)
+		if failed > 0 {
+			os.Exit(1)
+		}
+	}()
 
 	// 1. Health
-	err = client.Health()
+	_, err = db.Sentry.Health(ctx)
 	check("health", err == nil)
+	if err != nil {
+		fmt.Printf("    error: %v\n", err)
+	}
 
-	// 2. POLICY_LIST
-	_, err = client.PolicyList()
+	// 2. PolicyList
+	_, err = db.Sentry.PolicyList(ctx)
 	check("policy_list", err == nil)
+	if err != nil {
+		fmt.Printf("    error: %v\n", err)
+	}
 
-	// 3. EVALUATE (pass JSON string)
+	// 3. Evaluate (pass JSON string)
 	evalPayload := map[string]interface{}{
-		"principal": map[string]interface{}{"id": "user-1", "roles": []string{"admin"}},
-		"resource":  map[string]interface{}{"id": "doc-1", "type": "document"},
+		"principal": "user:test@example.com",
+		"resource":  "secret:db/test/*",
 		"action":    "read",
 	}
 	evalJSON, _ := json.Marshal(evalPayload)
-	_, err = client.Evaluate(string(evalJSON))
-	check("evaluate", err == nil)
-
-	// 4. KEY_INFO
-	_, err = client.KeyInfo()
-	check("key_info", err == nil)
-
-	// 5. Error: POLICY_INFO nonexistent
-	_, err = client.PolicyInfo("nonexistent")
-	check("error_notfound", err != nil)
-
-	check("close", true)
-
-	fmt.Printf("\n%d passed, %d failed\n", passed, failed)
-	if failed > 0 {
-		os.Exit(1)
+	result, err := db.Sentry.Evaluate(ctx, string(evalJSON))
+	check("evaluate", err == nil && result != nil)
+	if err != nil {
+		fmt.Printf("    error: %v\n", err)
 	}
+
+	// 4. KeyInfo
+	_, err = db.Sentry.KeyInfo(ctx)
+	check("key_info", err == nil)
+	if err != nil {
+		fmt.Printf("    error: %v\n", err)
+	}
+
+	// 5. PolicyCreate
+	policyName := fmt.Sprintf("test-policy-%d", time.Now().Unix()%10000)
+	policyPayload := map[string]interface{}{
+		"effect":     "permit",
+		"principals": []string{"user:*"},
+		"resources":  []string{"secret:test/*"},
+		"actions":    []string{"read"},
+	}
+	policyJSON, _ := json.Marshal(policyPayload)
+	pcResult, err := db.Sentry.PolicyCreate(ctx, policyName, string(policyJSON))
+	if err != nil && strings.Contains(strings.ToLower(err.Error()), "exists") {
+		check("policy_create", true)
+	} else {
+		check("policy_create", err == nil && pcResult != nil && pcResult.Name == policyName)
+		if err != nil {
+			fmt.Printf("    error: %v\n", err)
+		}
+	}
+
+	// 6. PolicyDelete
+	_, err = db.Sentry.PolicyDelete(ctx, policyName)
+	check("policy_delete", err == nil)
+	if err != nil {
+		fmt.Printf("    error: %v\n", err)
+	}
+
+	// 7. Error: PolicyGet nonexistent
+	_, err = db.Sentry.PolicyGet(ctx, "nonexistent-policy-xyz")
+	check("error_notfound", err != nil)
 }

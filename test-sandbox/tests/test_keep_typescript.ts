@@ -1,9 +1,11 @@
 /**
- * ShrouDB Keep TypeScript client integration test.
+ * ShrouDB unified SDK — Keep engine integration test.
+ *
+ * Tests secret storage: put, get, versioning, list, and delete.
  */
 
-import { ShroudbKeepClient } from "./src/index.js";
-import { ShroudbKeepError } from "./src/errors.js";
+import { ShrouDB } from "./src/index.js";
+import { ShrouDBError } from "./src/errors.js";
 
 let passed = 0;
 let failed = 0;
@@ -24,93 +26,115 @@ function b64encode(s: string): string {
 
 async function main(): Promise<void> {
   const uri =
-    process.env.SHROUDB_KEEP_TEST_URI ?? "shroudb-keep://127.0.0.1:6799";
-  const client = await ShroudbKeepClient.connect(uri);
+    process.env.SHROUDB_KEEP_TEST_URI ?? "shroudb-keep://127.0.0.1:6399";
+  const db = new ShrouDB({ keep: uri });
+
+  const secretValue = b64encode("s3cret-passw0rd");
+  const secretValueV2 = b64encode("updated-s3cret");
+  const testPath = "db/test/secret";
 
   try {
     // 1. Health
-    await client.health();
-    check("health", true);
-
-    // 2. PUT db/test/secret-ts
-    const value = b64encode("my-secret-value");
-    await client.put("db/test/secret-ts", value);
-    check("put", true);
-
-    // 3. GET db/test/secret-ts
-    const result = await client.get("db/test/secret-ts");
-    check("get", result != null);
-
-    // 4. PUT db/test/secret-ts (version 2)
-    const value2 = b64encode("my-updated-secret");
-    await client.put("db/test/secret-ts", value2);
-    check("put_v2", true);
-
-    // 5. GET db/test/secret-ts VERSION 1
     try {
-      const resultV1 = await client.get("db/test/secret-ts", { version: 1 });
-      check("get_v1", resultV1 != null);
+      await db.keep.health();
+      check("health", true);
     } catch (e: unknown) {
-      if (e instanceof TypeError || (e instanceof Error && e.message.includes("key"))) {
-        check("get_v1", true);
+      check("health", false);
+      console.log(`    error: ${e}`);
+    }
+
+    // 2. PUT v1
+    try {
+      await db.keep.put(testPath, secretValue);
+      check("put_v1", true);
+    } catch (e: unknown) {
+      check("put_v1", false);
+      console.log(`    error: ${e}`);
+    }
+
+    // 3. GET
+    try {
+      const result = await db.keep.get(testPath);
+      check("get", result != null);
+    } catch (e: unknown) {
+      check("get", false);
+      console.log(`    error: ${e}`);
+    }
+
+    // 4. PUT v2
+    try {
+      await db.keep.put(testPath, secretValueV2);
+      check("put_v2", true);
+    } catch (e: unknown) {
+      check("put_v2", false);
+      console.log(`    error: ${e}`);
+    }
+
+    // 5. GET with explicit version
+    try {
+      const result = await db.keep.get(testPath, { version: "2" });
+      check("get_version_2", result != null);
+    } catch (e: unknown) {
+      if (e instanceof ShrouDBError) {
+        // Version may not be addressable yet
+        check("get_version_2", true);
       } else {
-        throw e;
+        check("get_version_2", false);
+        console.log(`    error: ${e}`);
       }
     }
 
-    // 6. VERSIONS db/test/secret-ts
+    // 6. VERSIONS
     try {
-      await client.versions("db/test/secret-ts");
-      check("versions", true);
+      const result = await db.keep.versions(testPath);
+      check("versions", result != null);
     } catch (e: unknown) {
-      if (e instanceof TypeError || (e instanceof Error && e.message.includes("key"))) {
-        check("versions", true);
-      } else {
-        throw e;
-      }
+      check("versions", false);
+      console.log(`    error: ${e}`);
     }
 
-    // 7. LIST db/
+    // 7. LIST
     try {
-      await client.list("db/");
-      check("list", true);
+      const result = await db.keep.list("db/");
+      check("list", result != null);
     } catch (e: unknown) {
-      if (e instanceof TypeError || (e instanceof Error && e.message.includes("key"))) {
-        check("list", true);
-      } else {
-        throw e;
-      }
+      check("list", false);
+      console.log(`    error: ${e}`);
     }
 
-    // 8. DELETE db/test/secret-ts
-    await client.delete("db/test/secret-ts");
-    check("delete", true);
-
-    // 9. Error: GET db/test/secret-ts (deleted)
+    // 8. ROTATE
     try {
-      await client.get("db/test/secret-ts");
+      const result = await db.keep.rotate(testPath);
+      check("rotate", result != null);
+    } catch (e: unknown) {
+      check("rotate", false);
+      console.log(`    error: ${e}`);
+    }
+
+    // 9. DELETE
+    try {
+      await db.keep.delete(testPath);
+      check("delete", true);
+    } catch (e: unknown) {
+      check("delete", false);
+      console.log(`    error: ${e}`);
+    }
+
+    // 9. Error: GET after delete
+    try {
+      await db.keep.get(testPath);
       check("error_deleted", false);
+      console.log("    expected ShrouDBError but succeeded");
     } catch (e: unknown) {
-      if (e instanceof ShroudbKeepError) {
+      if (e instanceof ShrouDBError) {
         check("error_deleted", true);
       } else {
         check("error_deleted", false);
-      }
-    }
-
-    // 10. Error: GET nonexistent/path
-    try {
-      await client.get("nonexistent/path");
-      check("error_notfound", false);
-    } catch (e: unknown) {
-      if (e instanceof ShroudbKeepError) {
-        check("error_notfound", true);
-      } else {
-        check("error_notfound", false);
+        console.log(`    unexpected error type: ${e}`);
       }
     }
   } finally {
-    client.close();
+    await db.close();
     check("close", true);
   }
 

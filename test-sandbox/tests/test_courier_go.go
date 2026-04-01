@@ -1,20 +1,20 @@
-// ShrouDB Courier Go client integration test.
-//
-// Limited test -- no Transit available, so DELIVER is skipped.
-// Tests management commands only: TEMPLATE_LIST, TEMPLATE_INFO, HEALTH.
+// ShrouDB Courier unified SDK Go integration test.
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"strings"
+	"time"
 
-	shroudb_courier "github.com/shroudb/shroudb-courier-go"
+	shroudb "github.com/shroudb/shroudb-go"
 )
 
 var passed, failed int
 
-func check(name string, condition bool) {
-	if condition {
+func check(name string, ok bool) {
+	if ok {
 		passed++
 		fmt.Printf("  PASS  %s\n", name)
 	} else {
@@ -24,34 +24,51 @@ func check(name string, condition bool) {
 }
 
 func main() {
+	ctx := context.Background()
 	uri := os.Getenv("SHROUDB_COURIER_TEST_URI")
 	if uri == "" {
 		uri = "shroudb-courier://127.0.0.1:6899"
 	}
 
-	client, err := shroudb_courier.Connect(uri)
+	db, err := shroudb.New(shroudb.Options{Courier: uri})
 	if err != nil {
-		fmt.Printf("FATAL: cannot connect: %v\n", err)
+		fmt.Println("FAIL: connect:", err)
 		os.Exit(1)
 	}
-	defer client.Close()
+	defer func() {
+		db.Close()
+		check("close", true)
+		fmt.Printf("\n%d passed, %d failed\n", passed, failed)
+		if failed > 0 {
+			os.Exit(1)
+		}
+	}()
 
 	// 1. Health
-	err = client.Health()
+	_, err = db.Courier.Health(ctx)
 	check("health", err == nil)
 
-	// 2. TEMPLATE_LIST
-	_, err = client.TemplateList()
-	check("template_list", err == nil)
+	// 2. ChannelList
+	_, err = db.Courier.ChannelList(ctx)
+	check("channel_list", err == nil)
 
-	// 3. Error: TEMPLATE_INFO nonexistent
-	_, err = client.TemplateInfo("nonexistent")
-	check("error_notfound", err != nil)
+	// 3. ChannelCreate
+	channelName := fmt.Sprintf("test-channel-%d", time.Now().Unix()%10000)
+	config := `{"url":"https://example.com/webhook"}`
+	ccResult, err := db.Courier.ChannelCreate(ctx, channelName, "webhook", config)
+	if err != nil && strings.Contains(strings.ToLower(err.Error()), "exists") {
+		check("channel_create", true)
+	} else {
+		check("channel_create", err == nil && ccResult != nil && ccResult.Name == channelName)
+		if err != nil {
+			fmt.Printf("    error: %v\n", err)
+		}
+	}
 
-	check("close", true)
-
-	fmt.Printf("\n%d passed, %d failed\n", passed, failed)
-	if failed > 0 {
-		os.Exit(1)
+	// 4. ChannelDelete
+	_, err = db.Courier.ChannelDelete(ctx, channelName)
+	check("channel_delete", err == nil)
+	if err != nil {
+		fmt.Printf("    error: %v\n", err)
 	}
 }

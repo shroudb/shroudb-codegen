@@ -1,9 +1,10 @@
-# ShrouDB Courier Ruby client integration test.
-#
-# Limited test -- no Transit available, so DELIVER is skipped.
-# Tests management commands only: TEMPLATE_LIST, TEMPLATE_INFO, HEALTH.
+# frozen_string_literal: true
 
-require "shroudb_courier"
+# ShrouDB Courier unified SDK Ruby integration test.
+
+$LOAD_PATH.unshift(File.join(__dir__, "..", "lib")) unless __dir__.nil?
+require "shroudb"
+require "json"
 
 $passed = 0
 $failed = 0
@@ -19,31 +20,47 @@ def check(name, condition)
 end
 
 uri = ENV.fetch("SHROUDB_COURIER_TEST_URI", "shroudb-courier://127.0.0.1:6899")
-client = ShroudbCourier::Client.connect(uri)
+db = ShrouDB::Client.new(courier: uri)
 
 begin
   # 1. Health
-  client.health
+  db.courier.health
   check("health", true)
 
-  # 2. TEMPLATE_LIST
+  # 2. ChannelList
   begin
-    client.template_list
-    check("template_list", true)
+    db.courier.channel_list
+    check("channel_list", true)
   rescue KeyError, NoMethodError
-    check("template_list", true)
+    check("channel_list", true)
   end
 
-  # 3. Error: TEMPLATE_INFO nonexistent
+  # 3. ChannelCreate
+  channel_name = "test-channel-#{Time.now.to_i % 10000}"
   begin
-    client.template_info("nonexistent")
-    check("error_notfound", false)
-  rescue ShroudbCourier::Error
-    check("error_notfound", true)
+    config = JSON.generate({ "url" => "https://example.com/webhook" })
+    result = db.courier.channel_create(channel_name, "webhook", config)
+    check("channel_create", !result.nil? && result.name == channel_name)
+  rescue ShrouDB::Error => e
+    ok = e.message.include?("EXISTS") || e.message.downcase.include?("exists")
+    check("channel_create", ok)
+    puts "    error: #{e.message}" unless ok
+  rescue StandardError => e
+    check("channel_create", false)
+    puts "    error: #{e.message}"
+  end
+
+  # 4. ChannelDelete
+  begin
+    result = db.courier.channel_delete(channel_name)
+    check("channel_delete", !result.nil?)
+  rescue StandardError => e
+    check("channel_delete", false)
+    puts "    error: #{e.message}"
   end
 
 ensure
-  client.close
+  db.close
   check("close", true)
 end
 

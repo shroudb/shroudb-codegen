@@ -1,6 +1,6 @@
 # ShrouDB Codegen
 
-Unified SDK generator for ShrouDB wire protocol and HTTP API specs.
+Generates a single unified SDK per language from the Moat composite spec, with engine-namespaced methods (`db.cipher.encrypt(...)`, `db.sigil.userCreate(...)`), dual RESP3/HTTP transport, and full documentation (README.md + AGENTS.md per SDK).
 
 ## Security posture
 
@@ -34,8 +34,9 @@ cargo test --workspace
 
 ## Dependencies
 
-Codegen has no Cargo crate dependencies on other ShrouDB repos, but it reads `protocol.toml` specs from nearly every repo and generates SDK clients (Python, TypeScript, Go, Ruby, Protobuf) from them. Changes flow in both directions.
+Codegen has no Cargo crate dependencies on other ShrouDB repos, but it reads `protocol.toml` specs via the Moat composite spec and generates unified SDK clients (TypeScript, Python, Go, Ruby) from them.
 
-- **Spec inputs (upstream):** shroudb, shroudb-auth, shroudb-transit, shroudb-veil, shroudb-sentry, shroudb-mint, shroudb-keep, shroudb-courier, shroudb-pulse, shroudb-moat — each provides a `protocol.toml` that codegen reads.
-- **Generated clients (downstream):** Changes to codegen templates, naming conventions, or output structure break all generated SDKs. After any codegen change, regenerate and verify clients for all affected specs.
-- **Reverse direction:** When a repo changes its `protocol.toml` (adds/removes/renames commands, fields, or error codes), the generated clients must be regenerated to stay in sync.
+- **Entry point:** `shroudb-moat/protocol.toml` — the composite spec that references all 9 engine specs
+- **Spec inputs (upstream):** shroudb, shroudb-cipher, shroudb-sigil, shroudb-veil, shroudb-sentry, shroudb-forge, shroudb-keep, shroudb-courier, shroudb-chronicle — each provides a `protocol.toml` that Moat references
+- **Generated SDKs (downstream):** One unified SDK per language with all engines namespaced. Changes to codegen templates or output structure affect all generated SDKs. After any codegen change, regenerate and verify.
+- **Reverse direction:** When any engine changes its `protocol.toml`, regenerate all SDKs.

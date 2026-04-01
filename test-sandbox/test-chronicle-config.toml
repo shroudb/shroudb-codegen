@@ -1,0 +1,9 @@
+[server]
+tcp_bind = "127.0.0.1:{{PORT}}"
+
+[storage]
+data_dir = "{{DATA_DIR}}"
+
+[engine]
+max_events = 10000
+max_age_days = 1
