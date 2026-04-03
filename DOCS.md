@@ -100,6 +100,15 @@ await client.control.createTenant({ id: 'acme', name: 'Acme Corp' });
 
 Currently generates TypeScript for composite specs. Python, Go, and Ruby support is planned.
 
+## E2EE Blind Mode
+
+Generated SDKs include E2EE support for Veil and Sigil:
+
+- **Veil `put` and `search`** accept a `blind` boolean option. When `true`, the client provides pre-computed blind tokens (from `shroudb-veil-blind`) instead of plaintext. The server stores and searches without seeing plaintext.
+- **Sigil envelope create/update** payloads accept per-field blind wrappers (`{"blind": true, "value": "...", "tokens": "..."}`). Fields wrapped this way skip server-side Cipher encryption and Veil tokenization.
+
+The `flag` parameter type in `protocol.toml` generates as a boolean option (no value on the wire — the keyword is present or absent).
+
 ## Supported Engines
 
 | Engine | Spec type | Description |

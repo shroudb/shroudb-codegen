@@ -59,6 +59,7 @@ Each SDK includes:
 - **Mixed mode** — Moat default with per-engine direct overrides
 - **Internal serialization** — methods accept native types, build RESP3 frames internally
 - **Typed responses** — language-idiomatic response types per command
+- **E2EE blind mode** — Veil `put`/`search` accept `blind: true` for client-side tokenization; Sigil supports per-field blind wrappers
 - **Error hierarchy** — unified error class with server error codes
 - **Connection pooling** — idle connection reuse with configurable limits
 - **README.md** — installation, quick start, connection modes, engine reference
@@ -135,9 +136,9 @@ Starts all 9 engine servers on random ports, generates unified SDKs, and runs pe
 | keep (11 checks) | PASS | PASS | PASS | PASS |
 | courier (5 checks) | PASS | PASS | PASS | PASS |
 | chronicle (8 checks) | PASS | PASS | PASS | PASS |
-| veil (6 checks) | PASS | PASS | PASS | PASS |
+| veil (9 checks) | PASS | PASS | PASS | PASS |
 
-**339 checks across 9 engines, 4 languages, 36 test suites.**
+**351 checks across 9 engines, 4 languages, 36 test suites.**
 
 Requires engine binaries (from sibling repos) and language runtimes (`python3`, `node`, `go`, `ruby`).
 
