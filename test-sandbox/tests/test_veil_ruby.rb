@@ -5,6 +5,8 @@
 $LOAD_PATH.unshift(File.join(__dir__, "..", "lib")) unless __dir__.nil?
 require "shroudb"
 require "base64"
+require "openssl"
+require "json"
 
 $passed = 0
 $failed = 0
@@ -70,6 +72,57 @@ begin
     check("search", !result.nil?)
   rescue StandardError => e
     check("search", false)
+    puts "    error: #{e.message}"
+  end
+
+  # ── Blind (E2EE) operations ──────────────────────────────────
+
+  client_key = ("\x42" * 32).b
+
+  blind_tokens_fn = lambda do |text|
+    words = text.downcase.split(/[^a-z0-9]+/).reject(&:empty?)
+    word_tokens = words.map { |w| "w:#{w}" }.uniq.sort
+    trigram_tokens = words.flat_map { |w|
+      next [] if w.length < 3
+      (0..w.length - 3).map { |i| "t:#{w[i, 3]}" }
+    }.uniq.sort
+
+    do_hmac = lambda { |token| OpenSSL::HMAC.hexdigest("SHA256", client_key, token) }
+
+    token_set = {
+      words: word_tokens.map { |t| do_hmac.call(t) },
+      trigrams: trigram_tokens.map { |t| do_hmac.call(t) }
+    }
+    Base64.strict_encode64(JSON.generate(token_set))
+  end
+
+  # put ... blind
+  begin
+    tokens_b64 = blind_tokens_fn.call("hello world")
+    result = db.veil.put(idx_name, "blind-1", tokens_b64, blind: true)
+    check("put_blind", !result.nil?)
+  rescue StandardError => e
+    check("put_blind", false)
+    puts "    error: #{e.message}"
+  end
+
+  # search ... blind (exact)
+  begin
+    query_b64 = blind_tokens_fn.call("hello")
+    result = db.veil.search(idx_name, query_b64, mode: "exact", blind: true)
+    check("search_blind", !result.nil?)
+  rescue StandardError => e
+    check("search_blind", false)
+    puts "    error: #{e.message}"
+  end
+
+  # search ... blind with limit
+  begin
+    query_b64 = blind_tokens_fn.call("hello")
+    result = db.veil.search(idx_name, query_b64, mode: "contains", limit: 5, blind: true)
+    check("search_blind_with_limit", !result.nil?)
+  rescue StandardError => e
+    check("search_blind_with_limit", false)
     puts "    error: #{e.message}"
   end
 

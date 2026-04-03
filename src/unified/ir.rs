@@ -806,7 +806,7 @@ fn parse_type_def(val: &toml::Value) -> Option<TypeIR> {
         .unwrap_or("")
         .to_string();
 
-    let base64 = desc.to_lowercase().contains("base64");
+    let base64 = desc.to_lowercase().starts_with("base64-encoded");
 
     Some(TypeIR {
         description: desc,
@@ -886,7 +886,7 @@ fn normalize_type(t: &str) -> String {
     match t {
         "str" | "String" => "string".into(),
         "int" | "u32" | "u64" | "i64" => "integer".into(),
-        "bool" => "boolean".into(),
+        "bool" | "flag" => "boolean".into(),
         s if s.starts_with("array<") || s.starts_with("Array<") => "array".into(),
         s if s.starts_with("map") || s.starts_with("Map") || s.starts_with("dict") => "json".into(),
         other => other.to_string(),

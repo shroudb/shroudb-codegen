@@ -79,6 +79,66 @@ async function main(): Promise<void> {
       check("search", false);
       console.log(`    error: ${e}`);
     }
+
+    // ── Blind (E2EE) operations ──────────────────────────────────
+
+    // Build blind tokens client-side using Node crypto (HMAC-SHA256).
+    // This mirrors what shroudb-veil-blind does in Rust.
+    const crypto = await import("node:crypto");
+    const clientKey = Buffer.alloc(32, 0x42); // 32 bytes of 0x42
+
+    function blindTokens(text: string): string {
+      const words = text.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+      const wordTokens = [...new Set(words.map((w) => `w:${w}`))].sort();
+      const trigramTokens: string[] = [];
+      for (const w of words) {
+        if (w.length >= 3) {
+          for (let i = 0; i <= w.length - 3; i++) {
+            trigramTokens.push(`t:${w.slice(i, i + 3)}`);
+          }
+        }
+      }
+      const uniqueTrigrams = [...new Set(trigramTokens)].sort();
+
+      const hmac = (token: string) =>
+        crypto.createHmac("sha256", clientKey).update(token).digest("hex");
+
+      const tokenSet = {
+        words: wordTokens.map(hmac),
+        trigrams: uniqueTrigrams.map(hmac),
+      };
+      return Buffer.from(JSON.stringify(tokenSet)).toString("base64");
+    }
+
+    // 6. PUT ... BLIND
+    try {
+      const tokensB64 = blindTokens("hello world");
+      const result = await db.veil.put(idxName, "blind-1", tokensB64, { blind: true });
+      check("put_blind", result != null);
+    } catch (e: unknown) {
+      check("put_blind", false);
+      console.log(`    error: ${e}`);
+    }
+
+    // 7. SEARCH ... BLIND (exact match)
+    try {
+      const queryB64 = blindTokens("hello");
+      const result = await db.veil.search(idxName, queryB64, { mode: "exact", blind: true });
+      check("search_blind", result != null && (result as any).matched >= 1);
+    } catch (e: unknown) {
+      check("search_blind", false);
+      console.log(`    error: ${e}`);
+    }
+
+    // 8. SEARCH ... BLIND with limit
+    try {
+      const queryB64 = blindTokens("hello");
+      const result = await db.veil.search(idxName, queryB64, { mode: "contains", limit: 5, blind: true });
+      check("search_blind_with_limit", result != null);
+    } catch (e: unknown) {
+      check("search_blind_with_limit", false);
+      console.log(`    error: ${e}`);
+    }
   } finally {
     await db.close();
     check("close", true);

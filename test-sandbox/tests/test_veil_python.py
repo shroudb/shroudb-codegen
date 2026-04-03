@@ -77,6 +77,59 @@ async def main():
             check("search", False)
             print(f"    error: {e}")
 
+        # ── Blind (E2EE) operations ──────────────────────────────────
+        import hmac
+        import hashlib
+        import json
+
+        client_key = bytes([0x42] * 32)
+
+        def blind_tokens(text: str) -> str:
+            words = [w for w in __import__("re").split(r"[^a-z0-9]+", text.lower()) if w]
+            word_tokens = sorted(set(f"w:{w}" for w in words))
+            trigram_tokens = []
+            for w in words:
+                if len(w) >= 3:
+                    for i in range(len(w) - 2):
+                        trigram_tokens.append(f"t:{w[i:i+3]}")
+            trigram_tokens = sorted(set(trigram_tokens))
+
+            def do_hmac(token: str) -> str:
+                return hmac.new(client_key, token.encode(), hashlib.sha256).hexdigest()
+
+            token_set = {
+                "words": [do_hmac(t) for t in word_tokens],
+                "trigrams": [do_hmac(t) for t in trigram_tokens],
+            }
+            return base64.b64encode(json.dumps(token_set).encode()).decode()
+
+        # put ... blind
+        try:
+            tokens_b64 = blind_tokens("hello world")
+            result = await db.veil.put(idx_name, "blind-1", tokens_b64, blind=True)
+            check("put_blind", result is not None)
+        except Exception as e:
+            check("put_blind", False)
+            print(f"    error: {e}")
+
+        # search ... blind (exact)
+        try:
+            query_b64 = blind_tokens("hello")
+            result = await db.veil.search(idx_name, query_b64, mode="exact", blind=True)
+            check("search_blind", result is not None and getattr(result, "matched", 0) >= 1)
+        except Exception as e:
+            check("search_blind", False)
+            print(f"    error: {e}")
+
+        # search ... blind with limit
+        try:
+            query_b64 = blind_tokens("hello")
+            result = await db.veil.search(idx_name, query_b64, mode="contains", limit=5, blind=True)
+            check("search_blind_with_limit", result is not None)
+        except Exception as e:
+            check("search_blind_with_limit", False)
+            print(f"    error: {e}")
+
     finally:
         await db.close()
         check("close", True)
