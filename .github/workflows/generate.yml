@@ -6,24 +6,19 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "SDK version to publish (e.g., 1.4.0). Leave empty for dev build."
+        description: "SDK version to generate (e.g., 1.4.0). Leave empty for dev build."
         required: false
         default: ""
-      publish:
-        description: "Publish packages to GitHub Packages"
-        type: boolean
-        default: true
 
 permissions:
   contents: read
-  packages: write
 
 env:
   CODEGEN_BIN: ./target/release/shroudb-codegen
 
 jobs:
   generate:
-    name: Generate and publish SDKs
+    name: Generate SDKs
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -151,58 +146,6 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
 
-      # ── Publish to GitHub Packages ─────────────────────────────────
-
-      - name: Setup Node.js for GitHub Packages
-        if: ${{ github.event.inputs.publish != 'false' && steps.version.outputs.version != '' }}
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          registry-url: "https://npm.pkg.github.com"
-          scope: "@shroudb"
-
-      - name: Publish TypeScript SDK to GitHub Packages
-        if: ${{ github.event.inputs.publish != 'false' && steps.version.outputs.version != '' }}
-        run: |
-          cd /tmp/sdk-ts
-          # Ensure package is scoped to GitHub Packages
-          node -e "
-            const p = require('./package.json');
-            p.publishConfig = { registry: 'https://npm.pkg.github.com' };
-            p.repository = { type: 'git', url: 'https://github.com/shroudb/shroudb-sdk-typescript.git' };
-            require('fs').writeFileSync('package.json', JSON.stringify(p, null, 2) + '\n');
-          "
-          npm install --ignore-scripts
-          npm run build
-          npm publish || echo "Publish skipped (already published or auth issue)"
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        continue-on-error: true
-
-      - name: Setup Ruby for GitHub Packages
-        if: ${{ github.event.inputs.publish != 'false' && steps.version.outputs.version != '' }}
-        uses: ruby/setup-ruby@v1
-        with:
-          ruby-version: "3.3"
-
-      - name: Publish Ruby SDK to GitHub Packages
-        if: ${{ github.event.inputs.publish != 'false' && steps.version.outputs.version != '' }}
-        run: |
-          cd /tmp/sdk-rb
-          VERSION="${{ steps.version.outputs.version }}"
-          # Configure RubyGems for GitHub Packages
-          mkdir -p ~/.gem
-          cat > ~/.gem/credentials << CREDS
-          ---
-          :github: Bearer ${{ secrets.GITHUB_TOKEN }}
-          CREDS
-          chmod 0600 ~/.gem/credentials
-          gem build shroudb.gemspec
-          gem push --host "https://rubygems.pkg.github.com/shroudb" "shroudb-${VERSION}.gem" --key github || echo "Publish skipped (already published or auth issue)"
-        continue-on-error: true
-
-      # Go modules are published via git tags — no registry push needed.
-      # Users install with: go get github.com/shroudb/shroudb-go@v${VERSION}
-
-      # Python: GitHub Packages does not support PyPI. Users install directly
-      # from the repository via: pip install git+https://github.com/shroudb/shroudb-sdk-python.git@v${VERSION}
+      # Publishing is handled by each SDK repo's own workflow, triggered
+      # by the tag push above. See .github/workflows/publish.yml in each
+      # shroudb-sdk-* repository.
