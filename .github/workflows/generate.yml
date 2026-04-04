@@ -73,8 +73,8 @@ jobs:
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           git clone "https://x-access-token:${{ secrets.GH_PAT }}@github.com/shroudb/shroudb-sdk-typescript.git" /tmp/sdk-ts
-          # Preserve .git, replace everything else
-          find /tmp/sdk-ts -mindepth 1 -not -path '*/.git/*' -not -name '.git' -delete
+          # Preserve .git and .github, replace everything else
+          find /tmp/sdk-ts -mindepth 1 -not -path '*/.git/*' -not -name '.git' -not -path '*/.github/*' -not -name '.github' -delete
           cp -r generated/typescript/* /tmp/sdk-ts/
           cd /tmp/sdk-ts
           # Patch version
@@ -94,7 +94,7 @@ jobs:
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           git clone "https://x-access-token:${{ secrets.GH_PAT }}@github.com/shroudb/shroudb-sdk-python.git" /tmp/sdk-py
-          find /tmp/sdk-py -mindepth 1 -not -path '*/.git/*' -not -name '.git' -delete
+          find /tmp/sdk-py -mindepth 1 -not -path '*/.git/*' -not -name '.git' -not -path '*/.github/*' -not -name '.github' -delete
           cp -r generated/python/* /tmp/sdk-py/
           cd /tmp/sdk-py
           sed -i "s/^version = \".*\"/version = \"$VERSION\"/" pyproject.toml
@@ -113,7 +113,7 @@ jobs:
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           git clone "https://x-access-token:${{ secrets.GH_PAT }}@github.com/shroudb/shroudb-sdk-go.git" /tmp/sdk-go
-          find /tmp/sdk-go -mindepth 1 -not -path '*/.git/*' -not -name '.git' -delete
+          find /tmp/sdk-go -mindepth 1 -not -path '*/.git/*' -not -name '.git' -not -path '*/.github/*' -not -name '.github' -delete
           cp -r generated/go/* /tmp/sdk-go/
           cd /tmp/sdk-go
           git config user.name "shroudb-codegen[bot]"
@@ -131,7 +131,7 @@ jobs:
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           git clone "https://x-access-token:${{ secrets.GH_PAT }}@github.com/shroudb/shroudb-sdk-ruby.git" /tmp/sdk-rb
-          find /tmp/sdk-rb -mindepth 1 -not -path '*/.git/*' -not -name '.git' -delete
+          find /tmp/sdk-rb -mindepth 1 -not -path '*/.git/*' -not -name '.git' -not -path '*/.github/*' -not -name '.github' -delete
           cp -r generated/ruby/* /tmp/sdk-rb/
           cd /tmp/sdk-rb
           sed -i "s/s.version = \".*\"/s.version = \"$VERSION\"/" shroudb.gemspec
