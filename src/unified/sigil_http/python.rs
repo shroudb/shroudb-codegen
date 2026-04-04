@@ -303,7 +303,11 @@ fn gen_readme(pkg: &str, engine: &EngineIR, pascal: &str) -> GeneratedFile {
     .unwrap();
 
     out.push_str("## Installation\n\n");
-    writeln!(out, "```bash\npip install {pkg}\n```\n").unwrap();
+    writeln!(
+        out,
+        "```bash\npip install git+https://github.com/shroudb/shroudb-sdk-python.git\n```\n"
+    )
+    .unwrap();
 
     out.push_str("## Quick Start\n\n```python\n");
     writeln!(

@@ -345,6 +345,11 @@ fn gen_readme(pkg: &str, engine: &EngineIR, pascal: &str) -> GeneratedFile {
     .unwrap();
 
     out.push_str("## Installation\n\n");
+    out.push_str("Configure the GitHub Packages npm registry (one-time setup):\n\n");
+    out.push_str(
+        "```bash\necho \"@shroudb:registry=https://npm.pkg.github.com\" >> .npmrc\n```\n\n",
+    );
+    out.push_str("Then install:\n\n");
     writeln!(out, "```bash\nnpm install {pkg}\n```\n").unwrap();
 
     out.push_str("## Quick Start\n\n```typescript\n");

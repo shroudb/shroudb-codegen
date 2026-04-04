@@ -18,10 +18,20 @@ pub(super) fn generate(ir: &UnifiedIR) -> GeneratedFile {
 
     // Installation.
     out.push_str("## Installation\n\n");
+    out.push_str("Add the GitHub Packages gem source (one-time setup):\n\n");
+    out.push_str("```bash\ngem sources --add https://rubygems.pkg.github.com/shroudb\n```\n\n");
     out.push_str("Add to your Gemfile:\n\n");
-    writeln!(out, "```ruby\ngem \"{gem}\"\n```\n").unwrap();
+    writeln!(
+        out,
+        "```ruby\nsource \"https://rubygems.pkg.github.com/shroudb\" do\n  gem \"{gem}\"\nend\n```\n"
+    )
+    .unwrap();
     out.push_str("Or install directly:\n\n");
-    writeln!(out, "```bash\ngem install {gem}\n```\n").unwrap();
+    writeln!(
+        out,
+        "```bash\ngem install {gem} --source https://rubygems.pkg.github.com/shroudb\n```\n"
+    )
+    .unwrap();
 
     // Quick start.
     out.push_str("## Quick Start\n\n");

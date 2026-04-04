@@ -30,14 +30,15 @@ Gem::Specification.new do |s|
                   "Provides namespaced access with RESP3 and HTTP transport."
   s.license     = "MIT"
   s.authors     = ["ShrouDB"]
-  s.homepage    = "https://github.com/shroudb/shroudb-ruby"
+  s.homepage    = "https://github.com/shroudb/shroudb-sdk-ruby"
 
   s.required_ruby_version = ">= 3.1"
 
   s.files = Dir["lib/**/*.rb"]
 
   s.metadata = {{
-    "source_code_uri" => "https://github.com/shroudb/shroudb-ruby",
+    "source_code_uri" => "https://github.com/shroudb/shroudb-sdk-ruby",
+    "github_repo" => "https://github.com/shroudb/shroudb-sdk-ruby",
     "rubygems_mfa_required" => "true"
   }}
 end

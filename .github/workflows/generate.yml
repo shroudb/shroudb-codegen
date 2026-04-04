@@ -204,15 +204,5 @@ jobs:
       # Go modules are published via git tags — no registry push needed.
       # Users install with: go get github.com/shroudb/shroudb-go@v${VERSION}
 
-      # Python: GitHub Packages does not support PyPI. When ready, add a
-      # PYPI_TOKEN secret and uncomment:
-      #
-      # - name: Publish Python SDK to PyPI
-      #   run: |
-      #     cd /tmp/sdk-py
-      #     pip install build twine
-      #     python -m build
-      #     twine upload dist/*
-      #   env:
-      #     TWINE_USERNAME: __token__
-      #     TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+      # Python: GitHub Packages does not support PyPI. Users install directly
+      # from the repository via: pip install git+https://github.com/shroudb/shroudb-sdk-python.git@v${VERSION}

@@ -18,7 +18,17 @@ pub(super) fn generate(ir: &UnifiedIR) -> GeneratedFile {
 
     // Installation.
     out.push_str("## Installation\n\n");
-    writeln!(out, "```bash\npip install {pkg}\n```\n").unwrap();
+    writeln!(
+        out,
+        "```bash\npip install git+https://github.com/shroudb/shroudb-sdk-python.git\n```\n"
+    )
+    .unwrap();
+    out.push_str("To pin a specific version:\n\n");
+    writeln!(
+        out,
+        "```bash\npip install git+https://github.com/shroudb/shroudb-sdk-python.git@v1.0.0\n```\n"
+    )
+    .unwrap();
 
     // Quick start.
     out.push_str("## Quick Start\n\n");

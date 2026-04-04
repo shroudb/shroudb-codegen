@@ -331,7 +331,11 @@ fn gen_readme(gem: &str, engine: &EngineIR, pascal: &str) -> GeneratedFile {
     .unwrap();
 
     out.push_str("## Installation\n\n");
-    writeln!(out, "```bash\ngem install {gem}\n```\n").unwrap();
+    writeln!(
+        out,
+        "```bash\ngem install {gem} --source https://rubygems.pkg.github.com/shroudb\n```\n"
+    )
+    .unwrap();
 
     let gem_dir = gem.replace('-', "_");
     out.push_str("## Quick Start\n\n```ruby\n");
