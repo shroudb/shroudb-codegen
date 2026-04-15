@@ -468,10 +468,15 @@ fn parse_syntax_command(
     let mut positional_params = Vec::new();
     let mut named_params = Vec::new();
 
+    // Extract per-required-positional wire keywords from the syntax string, e.g.
+    // "CA CREATE <name> <algorithm> SUBJECT <subject>" → [None, None, Some("SUBJECT")].
+    let positional_keywords = extract_positional_keywords(syntax);
+
     let params_val = table.get("parameters").or_else(|| table.get("params"));
 
     if let Some(params_arr) = params_val.and_then(|v| v.as_array()) {
         // Array format: [{ name, type, required, ... }]
+        let mut required_idx = 0usize;
         for p in params_arr {
             let pt = p.as_table()?;
             let param_name = pt.get("name")?.as_str()?.to_string();
@@ -485,11 +490,13 @@ fn parse_syntax_command(
                 .to_string();
 
             if required {
+                let wire_key = positional_keywords.get(required_idx).cloned().flatten();
+                required_idx += 1;
                 positional_params.push(ParamIR {
                     name: param_name,
                     type_key,
                     required: true,
-                    wire_key: None,
+                    wire_key,
                     variadic: false,
                     description: desc,
                 });
@@ -515,6 +522,7 @@ fn parse_syntax_command(
 
         // Process in syntax order for positional params, then remaining for keywords
         let mut processed = std::collections::HashSet::new();
+        let mut required_idx = 0usize;
         for syntax_name in &syntax_order {
             if let Some(param_val) = params_table.get(syntax_name) {
                 processed.insert(syntax_name.clone());
@@ -525,11 +533,13 @@ fn parse_syntax_command(
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string();
+                let wire_key = positional_keywords.get(required_idx).cloned().flatten();
+                required_idx += 1;
                 positional_params.push(ParamIR {
                     name: syntax_name.clone(),
                     type_key: normalize_type(type_str),
                     required: true,
-                    wire_key: None,
+                    wire_key,
                     variadic: false,
                     description: desc,
                 });
@@ -881,6 +891,71 @@ fn parse_http_annotation(table: &toml::map::Map<String, toml::Value>) -> Option<
     })
 }
 
+/// Walk a command `syntax` string and, for each required (outside-brackets)
+/// `<placeholder>`, record the uppercase keyword that precedes it (if any).
+///
+/// Example: `"CA CREATE <name> <algorithm> SUBJECT <subject> [TTL_DAYS <n>]"`
+/// returns `[None, None, Some("SUBJECT")]` — one entry per required positional,
+/// in syntax order. Optional (bracketed) groups are skipped entirely; their
+/// keywords are derived from the param name by the caller.
+fn extract_positional_keywords(syntax: &str) -> Vec<Option<String>> {
+    let mut result: Vec<Option<String>> = Vec::new();
+    let mut depth: i32 = 0;
+    let mut pending_keyword: Option<String> = None;
+    let mut header_done = false;
+
+    for raw in syntax.split_whitespace() {
+        let starts_group = raw.starts_with('[');
+        let ends_group = raw.ends_with(']');
+
+        if starts_group {
+            depth += 1;
+        }
+
+        let core = raw
+            .trim_matches(|c| c == '[' || c == ']')
+            .trim_end_matches("...");
+        let is_placeholder = core.starts_with('<') && core.ends_with('>');
+        let is_keyword = !core.is_empty()
+            && core
+                .chars()
+                .all(|c| c.is_ascii_uppercase() || c == '_' || c.is_ascii_digit());
+
+        // Skip the verb/subcommand header (plain uppercase words before the
+        // first `<param>` or `[group]`).
+        if !header_done {
+            if starts_group || is_placeholder {
+                header_done = true;
+            } else {
+                if ends_group {
+                    depth -= 1;
+                }
+                continue;
+            }
+        }
+
+        if depth == 0 {
+            if is_placeholder {
+                result.push(pending_keyword.take());
+            } else if is_keyword {
+                pending_keyword = Some(core.to_string());
+            } else {
+                pending_keyword = None;
+            }
+        }
+
+        if ends_group {
+            depth -= 1;
+            if depth <= 0 {
+                depth = 0;
+                pending_keyword = None;
+            }
+        }
+    }
+
+    result
+}
+
 /// Normalize type names from various specs into consistent keys.
 fn normalize_type(t: &str) -> String {
     match t {
@@ -890,5 +965,54 @@ fn normalize_type(t: &str) -> String {
         s if s.starts_with("array<") || s.starts_with("Array<") => "array".into(),
         s if s.starts_with("map") || s.starts_with("Map") || s.starts_with("dict") => "json".into(),
         other => other.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extract_positional_keywords_forge_ca_create() {
+        // Forge's only required keyword-prefixed param. This is the regression
+        // that motivated the fix — `SUBJECT` must appear on the wire before
+        // the subject value, even though `subject` is required.
+        let got = extract_positional_keywords(
+            "CA CREATE <name> <algorithm> SUBJECT <subject> [TTL_DAYS <n>] [PARENT <ca>]",
+        );
+        assert_eq!(
+            got,
+            vec![None, None, Some("SUBJECT".to_string())],
+            "required positionals: [name, algorithm, SUBJECT+subject]"
+        );
+    }
+
+    #[test]
+    fn extract_positional_keywords_all_bare() {
+        // ISSUE has three required positionals with no keyword prefix.
+        let got = extract_positional_keywords(
+            "ISSUE <ca> <subject> <profile> [TTL <duration>] [SAN_DNS <name>...]",
+        );
+        assert_eq!(got, vec![None, None, None]);
+    }
+
+    #[test]
+    fn extract_positional_keywords_no_params() {
+        assert!(extract_positional_keywords("HEALTH").is_empty());
+        assert!(extract_positional_keywords("CA LIST").is_empty());
+    }
+
+    #[test]
+    fn extract_positional_keywords_optionals_ignored() {
+        // All params are optional — no required positionals.
+        let got = extract_positional_keywords("LIST [LIMIT <n>]");
+        assert!(got.is_empty());
+    }
+
+    #[test]
+    fn extract_positional_keywords_subcommand_not_misread_as_keyword() {
+        // `CREATE` is a subcommand word, not a wire keyword for `<name>`.
+        let got = extract_positional_keywords("CA CREATE <name>");
+        assert_eq!(got, vec![None]);
     }
 }

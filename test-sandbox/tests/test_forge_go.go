@@ -49,7 +49,16 @@ func main() {
 		fmt.Printf("    error: %v\n", err)
 	}
 
-	// 2. CaInfo
+	// 2. CaCreate — exercises the `SUBJECT` keyword-prefix wire path.
+	ttl := 30
+	caCreated, err := db.Forge.CaCreate(ctx, "codegen-new-ca", "ecdsa-p256", "CN=Codegen New CA",
+		&shroudb.ForgeCaCreateOptions{TtlDays: &ttl})
+	check("ca_create", err == nil && caCreated != nil && caCreated.Name == "codegen-new-ca")
+	if err != nil {
+		fmt.Printf("    error: %v\n", err)
+	}
+
+	// 3. CaInfo
 	_, err = db.Forge.CaInfo(ctx, "test-ca")
 	check("ca_info", err == nil)
 	if err != nil {

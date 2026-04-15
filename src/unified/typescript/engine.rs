@@ -143,6 +143,13 @@ fn gen_command_method(out: &mut String, engine: &EngineIR, cmd: &CommandIR) {
         } else {
             "    ".to_string()
         };
+        // Required params may carry a wire-keyword prefix
+        // (e.g. `CA CREATE <name> <algorithm> SUBJECT <subject>`).
+        if p.required
+            && let Some(k) = &p.wire_key
+        {
+            writeln!(out, "    args.push(\"{k}\");").unwrap();
+        }
         if p.type_key == "json" {
             writeln!(
                 out,

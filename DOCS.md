@@ -44,6 +44,7 @@ shroudb-codegen --spec protocol.toml --lang all --dry-run
 | `--spec` | `protocol.toml` | Path to the TOML spec file |
 | `--lang` | (required) | `python`, `typescript`, `go`, `ruby`, or `all` |
 | `--output` | `generated` | Output directory |
+| `--http` | | Generate HTTP REST SDK instead of RESP3 (for engines with HTTP APIs) |
 | `--dry-run` | | List files that would be generated, without writing |
 
 ### TOML Spec Format
@@ -83,7 +84,7 @@ results = pipe.execute()
 Generated HTTP clients handle base URL configuration and automatic auth headers:
 
 ```typescript
-const client = new ShrouDBAuth({ baseUrl: 'https://auth.example.com', token: 'sk-...' });
+const client = new ShrouDBSigil({ baseUrl: 'https://sigil.example.com', token: 'sk-...' });
 const session = await client.login(email, password);
 ```
 
@@ -92,13 +93,13 @@ const session = await client.login(email, password);
 When using a composite spec, Codegen produces a single SDK where each engine is accessed as a namespace:
 
 ```typescript
-const client = new ShrouDB({ endpoint: 'https://moat.example.com', token: 'sk-...' });
-await client.vault.verify('auth-tokens', userId, password);
-await client.transit.encrypt('payments', plaintext);
-await client.control.createTenant({ id: 'acme', name: 'Acme Corp' });
+const client = new ShrouDB({ moat: 'https://moat.example.com', token: 'sk-...' });
+await client.cipher.encrypt('payments', plaintext);
+await client.keep.put('db/api-key', secret);
+await client.sigil.userCreate({ email, password });
 ```
 
-Currently generates TypeScript for composite specs. Python, Go, and Ruby support is planned.
+Generates TypeScript, Python, Go, and Ruby SDKs from composite specs.
 
 ## E2EE Blind Mode
 
@@ -109,11 +110,23 @@ Generated SDKs include E2EE support for Veil and Sigil:
 
 The `flag` parameter type in `protocol.toml` generates as a boolean option (no value on the wire — the keyword is present or absent).
 
+Required parameters that appear with a `KEYWORD <value>` prefix in a command's
+`syntax` string (e.g., Forge's `CA CREATE <name> <algorithm> SUBJECT <subject>`)
+are emitted as positional arguments in the public SDK method signature, but the
+keyword is prepended on the wire. Codegen derives this from the syntax string;
+no extra field in `protocol.toml` is required.
+
 ## Supported Engines
 
 | Engine | Spec type | Description |
 |--------|-----------|-------------|
-| ShrouDB | Wire protocol | Credential management |
-| ShrouDB Transit | Wire protocol | Encryption as a service |
-| ShrouDB Auth | HTTP API | Authentication service |
-| ShrouDB Moat | Composite | Unified hub that imports engine specs into a single SDK |
+| ShrouDB | Wire protocol | Core encrypted KV database |
+| Cipher | Wire protocol | Encryption as a service |
+| Sigil | HTTP API | Authentication and identity |
+| Forge | Wire protocol | Key and token generation |
+| Keep | Wire protocol | Secret storage |
+| Chronicle | Wire protocol | Audit logging |
+| Veil | Wire protocol | Searchable encryption |
+| Courier | Wire protocol | Secure messaging |
+| Sentry | Wire protocol | Access control |
+| Moat | Composite | Unified gateway that imports all engine specs into a single SDK |

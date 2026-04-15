@@ -143,6 +143,11 @@ fn gen_command_method(out: &mut String, engine: &EngineIR, cmd: &CommandIR) {
     for p in &cmd.positional_params {
         let snake = rb_safe_name(&p.name);
         if p.required {
+            // Required params may still carry a wire keyword prefix
+            // (e.g. `CA CREATE <name> <algorithm> SUBJECT <subject>`).
+            if let Some(k) = &p.wire_key {
+                writeln!(out, "      args << \"{k}\"").unwrap();
+            }
             if p.type_key == "json" {
                 writeln!(
                     out,

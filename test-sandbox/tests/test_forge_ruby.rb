@@ -31,7 +31,18 @@ begin
     puts "    error: #{e.message}"
   end
 
-  # 2. CaInfo
+  # 2. CaCreate — exercises the `SUBJECT` keyword-prefix wire path.
+  begin
+    result = db.forge.ca_create(
+      "codegen-new-ca", "ecdsa-p256", "CN=Codegen New CA", ttl_days: 30
+    )
+    check("ca_create", !result.nil? && result.name == "codegen-new-ca")
+  rescue StandardError => e
+    check("ca_create", false)
+    puts "    error: #{e.message}"
+  end
+
+  # 3. CaInfo
   begin
     result = db.forge.ca_info("test-ca")
     check("ca_info", !result.nil?)

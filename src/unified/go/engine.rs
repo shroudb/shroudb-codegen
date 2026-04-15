@@ -158,6 +158,11 @@ fn gen_command_method(out: &mut String, engine: &EngineIR, cmd: &CommandIR) {
             out.push_str("\t}\n");
             continue;
         }
+        // Required params may carry a wire-keyword prefix
+        // (e.g. `CA CREATE <name> <algorithm> SUBJECT <subject>`).
+        if let Some(k) = &p.wire_key {
+            writeln!(out, "\targs = append(args, \"{k}\")").unwrap();
+        }
         if p.variadic {
             if is_string_like(&p.type_key) {
                 writeln!(out, "\targs = append(args, {name}...)").unwrap();

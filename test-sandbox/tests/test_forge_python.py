@@ -37,6 +37,16 @@ async def main():
             check("health_via_ca_list", False)
             print(f"    error: {e}")
 
+        # ca_create — exercises the `SUBJECT` keyword-prefix wire path.
+        try:
+            result = await db.forge.ca_create(
+                "codegen-new-ca", "ecdsa-p256", "CN=Codegen New CA", ttl_days=30
+            )
+            check("ca_create", result is not None and result.name == "codegen-new-ca")
+        except Exception as e:
+            check("ca_create", False)
+            print(f"    error: {e}")
+
         # ca_info
         try:
             result = await db.forge.ca_info("test-ca")

@@ -204,21 +204,28 @@ fn gen_command_method(out: &mut String, engine: &EngineIR, cmd: &CommandIR) {
             } else {
                 writeln!(out, "            args.append(str({snake}))").unwrap();
             }
-        } else if p.type_key == "json" {
-            writeln!(
-                out,
-                "        args.append({snake} if isinstance({snake}, str) else json.dumps({snake}))"
-            )
-            .unwrap();
-        } else if engine.is_base64_type(&p.type_key) {
-            // Auto-encode bytes to base64; pass strings through (assumed already encoded).
-            writeln!(
-                out,
-                "        args.append({snake} if isinstance({snake}, str) else base64.b64encode({snake}).decode())"
-            )
-            .unwrap();
         } else {
-            writeln!(out, "        args.append(str({snake}))").unwrap();
+            // Required branch: may carry a wire-keyword prefix
+            // (e.g. `CA CREATE <name> <algorithm> SUBJECT <subject>`).
+            if let Some(k) = &p.wire_key {
+                writeln!(out, "        args.append(\"{k}\")").unwrap();
+            }
+            if p.type_key == "json" {
+                writeln!(
+                    out,
+                    "        args.append({snake} if isinstance({snake}, str) else json.dumps({snake}))"
+                )
+                .unwrap();
+            } else if engine.is_base64_type(&p.type_key) {
+                // Auto-encode bytes to base64; pass strings through (assumed already encoded).
+                writeln!(
+                    out,
+                    "        args.append({snake} if isinstance({snake}, str) else base64.b64encode({snake}).decode())"
+                )
+                .unwrap();
+            } else {
+                writeln!(out, "        args.append(str({snake}))").unwrap();
+            }
         }
     }
 

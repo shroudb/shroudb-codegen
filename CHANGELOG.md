@@ -4,6 +4,18 @@ All notable changes to ShrouDB Codegen are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## Unreleased
+
+### Fixed
+
+- Emit required keyword-prefixed params on the wire in all 4 SDKs. Required
+  params with a `KEYWORD <value>` form in `syntax` (e.g., Forge's
+  `CA CREATE <name> <algorithm> SUBJECT <subject>`) were previously serialized
+  as bare positionals, which the engine rejects with `requires SUBJECT <subject>`.
+  Codegen now parses the syntax string for keyword prefixes and sets `wire_key`
+  on positional params so each generator prepends the keyword at emit time.
+  Public SDK method signatures are unchanged.
+
 ## [v0.1.0] - 2026-03-26
 
 ### Other

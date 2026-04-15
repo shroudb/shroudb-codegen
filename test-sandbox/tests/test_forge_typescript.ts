@@ -35,7 +35,21 @@ async function main(): Promise<void> {
       console.log(`    error: ${e}`);
     }
 
-    // 2. CA_INFO
+    // 2. CA_CREATE — exercises the `SUBJECT` keyword-prefix wire path.
+    try {
+      const result = await db.forge.caCreate(
+        "codegen-new-ca",
+        "ecdsa-p256",
+        "CN=Codegen New CA",
+        { ttl_days: 30 },
+      );
+      check("ca_create", result != null && result.name === "codegen-new-ca");
+    } catch (e: unknown) {
+      check("ca_create", false);
+      console.log(`    error: ${e}`);
+    }
+
+    // 3. CA_INFO
     try {
       const result = await db.forge.caInfo("test-ca");
       check("ca_info", result != null);
