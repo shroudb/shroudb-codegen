@@ -31,6 +31,23 @@ module ShrouDB
         raise NotImplementedError, "#{self.class}#execute is not implemented"
       end
 
+      # Execute a server-side atomic PIPELINE.
+      #
+      # Sends +PIPELINE+ with N nested sub-command arrays in a single RESP3
+      # frame and returns one result per sub-command, in order. Pass
+      # +request_id+ for idempotent retry — repeated calls with the same ID
+      # return the cached result without re-executing.
+      #
+      # Only supported over RESP3; HTTP transports raise NotImplementedError.
+      #
+      # @param engine [String] the engine name
+      # @param commands [Array<Array<String>>] sub-commands to execute
+      # @param request_id [String, nil] optional idempotency key
+      # @return [Array<Hash>] one parsed response per sub-command
+      def execute_pipeline(engine, commands, request_id = nil)
+        raise NotImplementedError, "#{self.class}#execute_pipeline is not implemented"
+      end
+
       # Close all connections and release resources.
       def close
         # no-op by default
@@ -91,6 +108,31 @@ module ShrouDB
 
       def execute(*args)
         write_command(args)
+        read_response
+      end
+
+      # Write a PIPELINE frame: outer array of [prefix, REQUEST_ID?, ...nested sub-commands].
+      def execute_pipeline_frame(prefix, commands, request_id)
+        keyword_count = request_id ? 2 : 0
+        outer_len = prefix.length + keyword_count + commands.length
+        frame = "*#{{outer_len}}\r\n"
+        prefix.each do |p|
+          s = p.to_s
+          frame << "$#{{s.bytesize}}\r\n#{{s}}\r\n"
+        end
+        if request_id
+          frame << "$10\r\nREQUEST_ID\r\n"
+          rid = request_id.to_s
+          frame << "$#{{rid.bytesize}}\r\n#{{rid}}\r\n"
+        end
+        commands.each do |sub|
+          frame << "*#{{sub.length}}\r\n"
+          sub.each do |arg|
+            s = arg.to_s
+            frame << "$#{{s.bytesize}}\r\n#{{s}}\r\n"
+          end
+        end
+        @sock.write(frame)
         read_response
       end
 
@@ -242,6 +284,14 @@ module ShrouDB
         end
       end
 
+      def execute_pipeline(_engine, commands, request_id = nil)
+        @pool.with do |conn|
+          raw = conn.execute_pipeline_frame(["PIPELINE"], commands, request_id)
+          raise ShrouDB::Error.new("ERR", "PIPELINE response was not an array") unless raw.is_a?(Array)
+          raw.map {{ |item| self.class.parse_response(item) }}
+        end
+      end
+
       def close
         @pool.close
       end
@@ -275,6 +325,14 @@ module ShrouDB
         @pool.with do |conn|
           raw = conn.execute(*prefixed)
           Resp3Transport.parse_response(raw)
+        end
+      end
+
+      def execute_pipeline(engine, commands, request_id = nil)
+        @pool.with do |conn|
+          raw = conn.execute_pipeline_frame([engine.upcase, "PIPELINE"], commands, request_id)
+          raise ShrouDB::Error.new("ERR", "PIPELINE response was not an array") unless raw.is_a?(Array)
+          raw.map {{ |item| Resp3Transport.parse_response(item) }}
         end
       end
 
@@ -323,6 +381,11 @@ module ShrouDB
         @base_url = base_url.chomp("/")
         @token = token
         @prefixes = prefixes
+      end
+
+      def execute_pipeline(_engine, _commands, _request_id = nil)
+        raise NotImplementedError,
+              "PIPELINE is a RESP3-only command; use Resp3Transport or MoatResp3Transport"
       end
 
       def execute(engine, args)

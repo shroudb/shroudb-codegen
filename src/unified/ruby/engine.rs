@@ -65,6 +65,14 @@ fn gen_engine_namespace(ir: &UnifiedIR, engine: &EngineIR) -> GeneratedFile {
 }
 
 fn gen_command_method(out: &mut String, engine: &EngineIR, cmd: &CommandIR) {
+    // PIPELINE is a unique wire shape (nested RESP3 sub-command arrays + optional
+    // REQUEST_ID). The generic flat-args emitter can't express it; generate a
+    // dedicated method that delegates to transport.execute_pipeline.
+    if cmd.verb == "PIPELINE" && cmd.subcommand.is_none() {
+        gen_pipeline_method(out, cmd);
+        return;
+    }
+
     let method_name = cmd.name.to_snake_case();
 
     // Build parameter list.
@@ -231,5 +239,18 @@ fn gen_command_method(out: &mut String, engine: &EngineIR, cmd: &CommandIR) {
         out.push_str("      raw\n");
     }
 
+    out.push_str("    end\n");
+}
+
+fn gen_pipeline_method(out: &mut String, cmd: &CommandIR) {
+    writeln!(out, "    # PIPELINE — {}", cmd.description).unwrap();
+    out.push_str("    #\n");
+    out.push_str(
+        "    # @param commands [Array<Array<String>>] sub-commands to execute atomically\n",
+    );
+    out.push_str("    # @param request_id [String, nil] optional idempotency key\n");
+    out.push_str("    # @return [Array<Hash>] one parsed response per sub-command\n");
+    out.push_str("    def pipeline(commands, request_id: nil)\n");
+    out.push_str("      @transport.execute_pipeline(@engine, commands, request_id)\n");
     out.push_str("    end\n");
 }

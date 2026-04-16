@@ -15,6 +15,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   Codegen now parses the syntax string for keyword prefixes and sets `wire_key`
   on positional params so each generator prepends the keyword at emit time.
   Public SDK method signatures are unchanged.
+- Emit a correct `PIPELINE` method across all 4 SDKs (TypeScript, Python, Ruby,
+  Go). Previously, the generator naively read PIPELINE's declared `count`
+  positional parameter from `shroudb/protocol.toml` and emitted a
+  `pipeline(count)` helper that only serialized the count prefix with no way
+  to feed sub-commands — making the generated method unusable. The emitter now
+  special-cases commands with `verb = "PIPELINE"` and generates
+  `pipeline(commands, requestId?)` that delegates to a new transport method.
+  Transport interfaces gain `executePipeline` (RESP3 transports implement the
+  nested-array frame with optional `REQUEST_ID` keyword for idempotent retry;
+  HTTP transports raise a not-supported error since PIPELINE is RESP3-only).
+  Matches the hand-written Rust client in `shroudb-client/src/lib.rs`. READMEs
+  also updated so the per-method parameter list reflects the real signature.
 
 ## [v0.1.0] - 2026-03-26
 

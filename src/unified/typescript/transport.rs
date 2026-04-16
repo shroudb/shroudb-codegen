@@ -25,6 +25,22 @@ export interface Transport {
   /** Execute a command and return the parsed response. */
   execute(engine: string, args: string[]): Promise<CommandResult>;
 
+  /**
+   * Execute a server-side atomic PIPELINE.
+   *
+   * Sends `PIPELINE` with N nested sub-command arrays in a single RESP3 frame
+   * and returns one result per sub-command, in order. Pass `requestId` for
+   * idempotent retry — repeated calls with the same ID return the cached result
+   * without re-executing.
+   *
+   * Only supported over RESP3; HTTP transports throw `NotSupportedError`.
+   */
+  executePipeline(
+    engine: string,
+    commands: string[][],
+    requestId?: string,
+  ): Promise<CommandResult[]>;
+
   /** Send a command without waiting for a response (pipeline buffering). */
   buffer(engine: string, args: string[]): void;
 
@@ -97,6 +113,43 @@ class Connection {
 
   async execute(...args: string[]): Promise<WireValue> {
     this.sendRaw(args);
+    return new Promise<WireValue>((resolve, reject) => {
+      this.resolveQueue.push(resolve);
+      this.rejectQueue.push(reject);
+      this.drain();
+    });
+  }
+
+  async executePipelineFrame(
+    prefix: string[],
+    commands: string[][],
+    requestId: string | undefined,
+  ): Promise<WireValue> {
+    // Wire format:
+    //   *N\r\n
+    //   $<..>\r\n<prefix args>\r\n   (e.g. PIPELINE, or ENGINE PIPELINE via Moat)
+    //   [$10\r\nREQUEST_ID\r\n $<len>\r\n<id>\r\n]  (optional)
+    //   *M\r\n <sub-command bulk strings> ...    (x N commands)
+    const keywordCount = requestId !== undefined ? 2 : 0;
+    const outerLen = prefix.length + keywordCount + commands.length;
+    let frame = `*${outerLen}\r\n`;
+    for (const p of prefix) {
+      const bytes = Buffer.byteLength(p, "utf-8");
+      frame += `$${bytes}\r\n${p}\r\n`;
+    }
+    if (requestId !== undefined) {
+      frame += `$10\r\nREQUEST_ID\r\n`;
+      const idBytes = Buffer.byteLength(requestId, "utf-8");
+      frame += `$${idBytes}\r\n${requestId}\r\n`;
+    }
+    for (const sub of commands) {
+      frame += `*${sub.length}\r\n`;
+      for (const arg of sub) {
+        const bytes = Buffer.byteLength(arg, "utf-8");
+        frame += `$${bytes}\r\n${arg}\r\n`;
+      }
+    }
+    this.socket.write(frame);
     return new Promise<WireValue>((resolve, reject) => {
       this.resolveQueue.push(resolve);
       this.rejectQueue.push(reject);
@@ -304,6 +357,23 @@ export class Resp3Transport implements Transport {
     }
   }
 
+  async executePipeline(
+    _engine: string,
+    commands: string[][],
+    requestId?: string,
+  ): Promise<CommandResult[]> {
+    const conn = await this.pool.acquire();
+    try {
+      const raw = await conn.executePipelineFrame(["PIPELINE"], commands, requestId);
+      if (!Array.isArray(raw)) {
+        throw new ShrouDBError("ERR", "PIPELINE response was not an array");
+      }
+      return raw.map(parseResponse);
+    } finally {
+      this.pool.release(conn);
+    }
+  }
+
   buffer(_engine: string, args: string[]): void {
     this.bufferedArgs.push(args);
   }
@@ -353,6 +423,27 @@ export class MoatResp3Transport implements Transport {
     try {
       const raw = await conn.execute(...prefixed);
       return parseResponse(raw);
+    } finally {
+      this.pool.release(conn);
+    }
+  }
+
+  async executePipeline(
+    engine: string,
+    commands: string[][],
+    requestId?: string,
+  ): Promise<CommandResult[]> {
+    const conn = await this.pool.acquire();
+    try {
+      const raw = await conn.executePipelineFrame(
+        [engine.toUpperCase(), "PIPELINE"],
+        commands,
+        requestId,
+      );
+      if (!Array.isArray(raw)) {
+        throw new ShrouDBError("ERR", "PIPELINE response was not an array");
+      }
+      return raw.map(parseResponse);
     } finally {
       this.pool.release(conn);
     }
@@ -464,6 +555,17 @@ export class HttpTransport implements Transport {
     if (this.baseUrl.endsWith("/")) {
       this.baseUrl = this.baseUrl.slice(0, -1);
     }
+  }
+
+  async executePipeline(
+    _engine: string,
+    _commands: string[][],
+    _requestId?: string,
+  ): Promise<CommandResult[]> {
+    throw ShrouDBError._fromServer(
+      "NOT_SUPPORTED",
+      "PIPELINE is a RESP3-only command; use Resp3Transport or MoatResp3Transport",
+    );
   }
 
   async execute(engine: string, args: string[]): Promise<CommandResult> {

@@ -71,6 +71,14 @@ fn gen_engine_file(engine: &EngineIR) -> GeneratedFile {
 }
 
 fn gen_command_method(out: &mut String, engine: &EngineIR, cmd: &CommandIR) {
+    // PIPELINE is a unique wire shape (nested RESP3 sub-command arrays + optional
+    // REQUEST_ID). The generic flat-args emitter can't express it; generate a
+    // dedicated method that delegates to transport.ExecutePipeline.
+    if cmd.verb == "PIPELINE" && cmd.subcommand.is_none() {
+        gen_pipeline_method(out, engine, cmd);
+        return;
+    }
+
     let pascal = engine.name.to_pascal_case();
     let method_name = cmd.name.to_pascal_case();
 
@@ -266,6 +274,18 @@ fn gen_command_method(out: &mut String, engine: &EngineIR, cmd: &CommandIR) {
         out.push_str("\treturn err\n");
     }
 
+    out.push_str("}\n");
+}
+
+fn gen_pipeline_method(out: &mut String, engine: &EngineIR, cmd: &CommandIR) {
+    let pascal = engine.name.to_pascal_case();
+    writeln!(out, "// Pipeline — {}", cmd.description).unwrap();
+    writeln!(
+        out,
+        "func (ns *{pascal}Namespace) Pipeline(ctx context.Context, commands [][]string, requestID string) ([]map[string]any, error) {{"
+    )
+    .unwrap();
+    out.push_str("\treturn ns.transport.ExecutePipeline(ctx, ns.engine, commands, requestID)\n");
     out.push_str("}\n");
 }
 

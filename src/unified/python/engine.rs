@@ -119,6 +119,14 @@ fn gen_engine_namespace(pkg: &str, engine: &EngineIR) -> GeneratedFile {
 }
 
 fn gen_command_method(out: &mut String, engine: &EngineIR, cmd: &CommandIR) {
+    // PIPELINE is a unique wire shape (nested RESP3 sub-command arrays + optional
+    // REQUEST_ID). The generic flat-args emitter can't express it; generate a
+    // dedicated method that delegates to transport.execute_pipeline.
+    if cmd.verb == "PIPELINE" && cmd.subcommand.is_none() {
+        gen_pipeline_method(out, cmd);
+        return;
+    }
+
     let method_name = cmd.name.to_snake_case();
 
     // Build parameter list.
@@ -294,6 +302,25 @@ fn gen_command_method(out: &mut String, engine: &EngineIR, cmd: &CommandIR) {
             .unwrap();
         }
     }
+}
+
+fn gen_pipeline_method(out: &mut String, cmd: &CommandIR) {
+    writeln!(
+        out,
+        "    async def pipeline(\n        self,\n        commands: list[list[str]],\n        request_id: str | None = None,\n    ) -> list[dict[str, Any]]:"
+    )
+    .unwrap();
+    writeln!(
+        out,
+        "        \"\"\"PIPELINE — {desc}\"\"\"",
+        desc = cmd.description
+    )
+    .unwrap();
+    writeln!(
+        out,
+        "        return await self._transport.execute_pipeline(self._engine, commands, request_id)"
+    )
+    .unwrap();
 }
 
 fn py_zero_value(type_key: &str) -> &'static str {

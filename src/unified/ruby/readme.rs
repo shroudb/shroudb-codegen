@@ -156,6 +156,9 @@ pub(super) fn generate(ir: &UnifiedIR) -> GeneratedFile {
 }
 
 fn brief_params(cmd: &CommandIR) -> String {
+    if cmd.verb == "PIPELINE" && cmd.subcommand.is_none() {
+        return "commands, request_id: nil".into();
+    }
     let mut parts = Vec::new();
     for p in &cmd.positional_params {
         parts.push(p.name.to_snake_case());

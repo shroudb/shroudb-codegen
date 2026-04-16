@@ -74,6 +74,14 @@ fn gen_engine_namespace(_ir: &UnifiedIR, engine: &EngineIR) -> GeneratedFile {
 }
 
 fn gen_command_method(out: &mut String, engine: &EngineIR, cmd: &CommandIR) {
+    // PIPELINE is a unique wire shape (nested RESP3 sub-command arrays + optional
+    // REQUEST_ID). The generic flat-args emitter can't express it; generate a
+    // dedicated method that delegates to transport.executePipeline.
+    if cmd.verb == "PIPELINE" && cmd.subcommand.is_none() {
+        gen_pipeline_method(out, cmd);
+        return;
+    }
+
     let method_name = cmd.name.to_lower_camel_case();
 
     // Build parameter list.
@@ -210,5 +218,14 @@ fn gen_command_method(out: &mut String, engine: &EngineIR, cmd: &CommandIR) {
         )
         .unwrap();
     }
+    out.push_str("  }\n");
+}
+
+fn gen_pipeline_method(out: &mut String, cmd: &CommandIR) {
+    writeln!(out, "  /** PIPELINE — {} */", cmd.description).unwrap();
+    out.push_str(
+        "  async pipeline(commands: string[][], requestId?: string): Promise<CommandResult[]> {\n",
+    );
+    out.push_str("    return this.transport.executePipeline(this.engine, commands, requestId);\n");
     out.push_str("  }\n");
 }

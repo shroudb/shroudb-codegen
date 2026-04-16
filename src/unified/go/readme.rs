@@ -144,6 +144,10 @@ pub(super) fn generate(ir: &UnifiedIR) -> GeneratedFile {
 }
 
 fn brief_params(cmd: &CommandIR) -> String {
+    // PIPELINE has a unique signature that doesn't match positional_params.
+    if cmd.verb == "PIPELINE" && cmd.subcommand.is_none() {
+        return "ctx, commands, requestID".into();
+    }
     let mut parts = vec!["ctx".to_string()];
     for p in &cmd.positional_params {
         parts.push(p.name.clone());

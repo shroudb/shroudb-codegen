@@ -22,6 +22,15 @@ type Transport interface {
 	// Execute sends a command and returns the parsed response.
 	Execute(ctx context.Context, engine string, args []string) (map[string]any, error)
 
+	// ExecutePipeline sends a server-side atomic PIPELINE with N nested
+	// sub-command arrays in a single RESP3 frame and returns one result per
+	// sub-command, in order. Pass a non-empty requestID for idempotent retry —
+	// repeated calls with the same ID return the cached result without
+	// re-executing.
+	//
+	// Only supported over RESP3; HTTP transports return ErrPipelineNotSupported.
+	ExecutePipeline(ctx context.Context, engine string, commands [][]string, requestID string) ([]map[string]any, error)
+
 	// Close releases all connections held by this transport.
 	Close() error
 }
@@ -68,6 +77,33 @@ func (c *resp3Conn) send(args []string) error {
 	fmt.Fprintf(&b, "*%d\r\n", len(args))
 	for _, arg := range args {
 		fmt.Fprintf(&b, "$%d\r\n%s\r\n", len(arg), arg)
+	}
+	_, err := c.conn.Write([]byte(b.String()))
+	return err
+}
+
+// sendPipeline writes a PIPELINE frame: outer array of
+// [prefix..., REQUEST_ID?, ...nested sub-command arrays].
+func (c *resp3Conn) sendPipeline(prefix []string, commands [][]string, requestID string) error {
+	var b strings.Builder
+	keywordCount := 0
+	if requestID != "" {
+		keywordCount = 2
+	}
+	outerLen := len(prefix) + keywordCount + len(commands)
+	fmt.Fprintf(&b, "*%d\r\n", outerLen)
+	for _, p := range prefix {
+		fmt.Fprintf(&b, "$%d\r\n%s\r\n", len(p), p)
+	}
+	if requestID != "" {
+		b.WriteString("$10\r\nREQUEST_ID\r\n")
+		fmt.Fprintf(&b, "$%d\r\n%s\r\n", len(requestID), requestID)
+	}
+	for _, sub := range commands {
+		fmt.Fprintf(&b, "*%d\r\n", len(sub))
+		for _, arg := range sub {
+			fmt.Fprintf(&b, "$%d\r\n%s\r\n", len(arg), arg)
+		}
 	}
 	_, err := c.conn.Write([]byte(b.String()))
 	return err
@@ -297,6 +333,32 @@ func (t *Resp3Transport) Execute(ctx context.Context, engine string, args []stri
 	return parseResp3Response(raw), nil
 }
 
+// ExecutePipeline sends a server-side atomic PIPELINE over RESP3.
+func (t *Resp3Transport) ExecutePipeline(ctx context.Context, engine string, commands [][]string, requestID string) ([]map[string]any, error) {
+	conn, err := t.pool.acquire()
+	if err != nil {
+		return nil, err
+	}
+	defer t.pool.release(conn)
+
+	if err := conn.sendPipeline([]string{"PIPELINE"}, commands, requestID); err != nil {
+		return nil, err
+	}
+	raw, err := conn.readReply()
+	if err != nil {
+		return nil, err
+	}
+	items, ok := raw.([]any)
+	if !ok {
+		return nil, &ShrouDBError{Code: "ERR", Message: "PIPELINE response was not an array"}
+	}
+	out := make([]map[string]any, len(items))
+	for i, item := range items {
+		out[i] = parseResp3Response(item)
+	}
+	return out, nil
+}
+
 // Close releases all pooled connections.
 func (t *Resp3Transport) Close() error {
 	return t.pool.close()
@@ -337,6 +399,34 @@ func (t *MoatResp3Transport) Execute(ctx context.Context, engine string, args []
 		return nil, err
 	}
 	return parseResp3Response(raw), nil
+}
+
+// ExecutePipeline sends a server-side atomic PIPELINE through a Moat gateway,
+// prefixing the frame with the uppercase engine name.
+func (t *MoatResp3Transport) ExecutePipeline(ctx context.Context, engine string, commands [][]string, requestID string) ([]map[string]any, error) {
+	conn, err := t.pool.acquire()
+	if err != nil {
+		return nil, err
+	}
+	defer t.pool.release(conn)
+
+	prefix := []string{strings.ToUpper(engine), "PIPELINE"}
+	if err := conn.sendPipeline(prefix, commands, requestID); err != nil {
+		return nil, err
+	}
+	raw, err := conn.readReply()
+	if err != nil {
+		return nil, err
+	}
+	items, ok := raw.([]any)
+	if !ok {
+		return nil, &ShrouDBError{Code: "ERR", Message: "PIPELINE response was not an array"}
+	}
+	out := make([]map[string]any, len(items))
+	for i, item := range items {
+		out[i] = parseResp3Response(item)
+	}
+	return out, nil
 }
 
 // Close releases all pooled connections.
@@ -422,11 +512,17 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
 )
+
+// ErrPipelineNotSupported is returned by HttpTransport.ExecutePipeline because
+// PIPELINE is a RESP3-only command. Use Resp3Transport or MoatResp3Transport
+// to execute a server-side atomic pipeline.
+var ErrPipelineNotSupported = errors.New("shroudb: PIPELINE is a RESP3-only command; use Resp3Transport or MoatResp3Transport")
 
 // HttpTransport implements Transport via HTTP POST to a Moat gateway.
 // Commands are sent as JSON to /v1/{engine}.
@@ -503,6 +599,11 @@ func (t *HttpTransport) Execute(ctx context.Context, engine string, args []strin
 		return nil, fmt.Errorf("http: unmarshal response: %w", err)
 	}
 	return result, nil
+}
+
+// ExecutePipeline always returns ErrPipelineNotSupported; PIPELINE requires RESP3.
+func (t *HttpTransport) ExecutePipeline(ctx context.Context, engine string, commands [][]string, requestID string) ([]map[string]any, error) {
+	return nil, ErrPipelineNotSupported
 }
 
 // Close is a no-op for HTTP transport (stateless).

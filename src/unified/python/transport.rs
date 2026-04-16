@@ -39,6 +39,23 @@ class Transport(abc.ABC):
         """Execute a command and return the parsed response."""
 
     @abc.abstractmethod
+    async def execute_pipeline(
+        self,
+        engine: str,
+        commands: list[list[str]],
+        request_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Execute a server-side atomic PIPELINE.
+
+        Sends ``PIPELINE`` with N nested sub-command arrays in a single RESP3
+        frame and returns one result per sub-command, in order. Pass
+        ``request_id`` for idempotent retry — repeated calls with the same ID
+        return the cached result without re-executing.
+
+        Only supported over RESP3; HTTP transports raise ``NotImplementedError``.
+        """
+
+    @abc.abstractmethod
     async def close(self) -> None:
         """Close all connections."""
 "#
@@ -106,6 +123,36 @@ class Resp3Connection:
     async def execute(self, *args: str) -> WireValue:
         """Send a RESP3 command and read the response."""
         self._send_raw(list(args))
+        await self._writer.drain()
+        return await self._read_frame()
+
+    async def execute_pipeline_frame(
+        self,
+        prefix: list[str],
+        commands: list[list[str]],
+        request_id: str | None,
+    ) -> WireValue:
+        """Send a server-side PIPELINE frame (nested sub-command arrays)."""
+        # *N\r\n
+        # $<..>\r\n<prefix bulk strings>
+        # [$10\r\nREQUEST_ID\r\n $<len>\r\n<id>\r\n]  (optional)
+        # *M\r\n <sub-command bulk strings> ...       (x N commands)
+        keyword_count = 2 if request_id is not None else 0
+        outer_len = len(prefix) + keyword_count + len(commands)
+        parts: list[str] = [f"*{outer_len}\r\n"]
+        for p in prefix:
+            encoded = p.encode("utf-8")
+            parts.append(f"${len(encoded)}\r\n{p}\r\n")
+        if request_id is not None:
+            parts.append("$10\r\nREQUEST_ID\r\n")
+            id_encoded = request_id.encode("utf-8")
+            parts.append(f"${len(id_encoded)}\r\n{request_id}\r\n")
+        for sub in commands:
+            parts.append(f"*{len(sub)}\r\n")
+            for arg in sub:
+                encoded = arg.encode("utf-8")
+                parts.append(f"${len(encoded)}\r\n{arg}\r\n")
+        self._writer.write("".join(parts).encode("utf-8"))
         await self._writer.drain()
         return await self._read_frame()
 
@@ -325,6 +372,23 @@ class Resp3Transport(Transport):
         finally:
             self._pool.release(conn)
 
+    async def execute_pipeline(
+        self,
+        engine: str,
+        commands: list[list[str]],
+        request_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        conn = await self._pool.acquire()
+        try:
+            raw = await conn.execute_pipeline_frame(["PIPELINE"], commands, request_id)
+            if not isinstance(raw, list):
+                from ..errors import ShrouDBError
+
+                raise ShrouDBError("ERR", "PIPELINE response was not an array")
+            return [_parse_response(item) for item in raw]
+        finally:
+            self._pool.release(conn)
+
     async def close(self) -> None:
         await self._pool.close()
 
@@ -351,6 +415,25 @@ class MoatResp3Transport(Transport):
         try:
             raw = await conn.execute(*prefixed)
             return _parse_response(raw)
+        finally:
+            self._pool.release(conn)
+
+    async def execute_pipeline(
+        self,
+        engine: str,
+        commands: list[list[str]],
+        request_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        conn = await self._pool.acquire()
+        try:
+            raw = await conn.execute_pipeline_frame(
+                [engine.upper(), "PIPELINE"], commands, request_id
+            )
+            if not isinstance(raw, list):
+                from ..errors import ShrouDBError
+
+                raise ShrouDBError("ERR", "PIPELINE response was not an array")
+            return [_parse_response(item) for item in raw]
         finally:
             self._pool.release(conn)
 
@@ -393,6 +476,16 @@ class HttpTransport(Transport):
         self._base_url = base_url.rstrip("/")
         self._token = token
         self._prefixes = prefixes or {}
+
+    async def execute_pipeline(
+        self,
+        engine: str,
+        commands: list[list[str]],
+        request_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        raise NotImplementedError(
+            "PIPELINE is a RESP3-only command; use Resp3Transport or MoatResp3Transport"
+        )
 
     async def execute(self, engine: str, args: list[str]) -> dict[str, Any]:
         prefix = self._prefixes.get(engine, f"/v1/{engine}")
