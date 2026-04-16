@@ -3,3 +3,4 @@
 /test-sandbox/.tmp/
 /test-sandbox/data/
 /test-sandbox/*-data/
+.DS_Store
