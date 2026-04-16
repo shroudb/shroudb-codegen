@@ -6,9 +6,9 @@ ShrouDB Codegen reads a TOML protocol specification and generates typed, publish
 
 It supports three spec shapes:
 
-- **Wire protocol specs** for engines like ShrouDB and ShrouDB Transit.
-- **HTTP API specs** for engines like ShrouDB Auth.
-- **Composite specs** for ShrouDB Moat, which imports multiple engine specs and produces a single unified SDK with engine-namespaced methods.
+- **Wire protocol specs** for engines like Cipher, Forge, Keep, Chronicle, Veil, Courier, and Sentry.
+- **HTTP API specs** for engines like Sigil.
+- **Composite specs** for Moat, which imports multiple engine specs and produces a single unified SDK with engine-namespaced methods.
 
 ## Why It Matters
 
