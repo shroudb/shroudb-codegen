@@ -47,6 +47,27 @@ class _NoTransport(Transport):
             f"Provide a moat URL or {self._engine} URI."
         )
 
+    async def execute_many(
+        self,
+        engine: str,
+        args_list: list[list[str]],
+    ) -> list[dict[str, Any]]:
+        raise RuntimeError(
+            f"No transport configured for {self._engine}. "
+            f"Provide a moat URL or {self._engine} URI."
+        )
+
+    async def execute_pipeline(
+        self,
+        engine: str,
+        commands: list[list[str]],
+        request_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        raise RuntimeError(
+            f"No transport configured for {self._engine}. "
+            f"Provide a moat URL or {self._engine} URI."
+        )
+
     async def close(self) -> None:
         pass
 

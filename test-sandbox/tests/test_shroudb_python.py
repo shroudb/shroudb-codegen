@@ -86,6 +86,44 @@ async def main():
             check("error_after_delete", False)
             print(f"    unexpected error type: {type(e).__name__}: {e}")
 
+        # PIPELINE: atomic batch of commands on one round-trip.
+        try:
+            results = await db.shroudb.pipeline([
+                ["PUT", "test-ns", "pipe-k1", "v1"],
+                ["PUT", "test-ns", "pipe-k2", "v2"],
+                ["GET", "test-ns", "pipe-k1"],
+            ])
+            check("pipeline_returns_list", isinstance(results, list))
+            check("pipeline_length", len(results) == 3)
+            check("pipeline_get_value", results[2].get("value") == "v1")
+        except Exception as e:
+            check("pipeline", False)
+            print(f"    error: {e}")
+
+        # PIPELINE idempotency: same request_id returns cached result.
+        try:
+            import time
+
+            rid = f"test-idempotency-{int(time.time() * 1000)}"
+            first = await db.shroudb.pipeline(
+                [["PUT", "test-ns", "pipe-idem", "first"]], request_id=rid
+            )
+            second = await db.shroudb.pipeline(
+                [["PUT", "test-ns", "pipe-idem", "second"]], request_id=rid
+            )
+            check(
+                "pipeline_idempotent_replay",
+                first[0].get("version") == second[0].get("version"),
+            )
+            current = await db.shroudb.get("test-ns", "pipe-idem")
+            check(
+                "pipeline_idempotent_value_unchanged",
+                getattr(current, "value", None) == "first",
+            )
+        except Exception as e:
+            check("pipeline_idempotency", False)
+            print(f"    error: {e}")
+
     finally:
         await db.close()
         check("close", True)

@@ -123,6 +123,20 @@ begin
     puts "    unexpected error type: #{e.class}: #{e.message}"
   end
 
+  # 10. get_many — batch variant emitted by `batchable = true` on GET.
+  begin
+    batch_paths = ["db/batch/a", "db/batch/b", "db/batch/c"]
+    batch_paths.each_with_index { |p, i| db.keep.put(p, Base64.strict_encode64("v#{i}")) }
+    results = db.keep.get_many(batch_paths.map { |p| { path: p } })
+    check("get_many_length", results.length == 3)
+    # Responses are KeepGetResponse objects; normalize to hash for portability.
+    shapes = results.map { |r| r.respond_to?(:to_h) ? r.to_h : r }
+    check("get_many_all_ok", shapes.all? { |r| (r["status"] || r[:status]) == "ok" })
+  rescue StandardError => e
+    check("get_many", false)
+    puts "    error: #{e.message}"
+  end
+
 ensure
   db.close
   check("close", true)

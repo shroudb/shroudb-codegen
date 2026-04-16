@@ -133,6 +133,25 @@ async function main(): Promise<void> {
         console.log(`    unexpected error type: ${e}`);
       }
     }
+
+    // 10. getMany — batch variant emitted by `batchable = true` on GET.
+    try {
+      const batchPaths = ["db/batch/a", "db/batch/b", "db/batch/c"];
+      for (let i = 0; i < batchPaths.length; i++) {
+        await db.keep.put(batchPaths[i], b64encode(`v${i}`));
+      }
+      const results = await db.keep.getMany(
+        batchPaths.map((p) => ({ path: p })),
+      );
+      check("get_many_length", results.length === 3);
+      check(
+        "get_many_all_ok",
+        results.every((r) => (r as { status?: string }).status === "ok"),
+      );
+    } catch (e: unknown) {
+      check("get_many", false);
+      console.log(`    error: ${e}`);
+    }
   } finally {
     await db.close();
     check("close", true);

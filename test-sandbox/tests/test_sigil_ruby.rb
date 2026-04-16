@@ -36,6 +36,15 @@ begin
     puts "    error: #{e.message}"
   end
 
+  # 1b. Ping — added in Sigil v2.1 to restore uniform meta-command coverage.
+  begin
+    db.sigil.ping
+    check("ping", true)
+  rescue StandardError => e
+    check("ping", false)
+    puts "    error: #{e.message}"
+  end
+
   # 2. Schema register (with credential field for verify/session tests)
   begin
     schema = {

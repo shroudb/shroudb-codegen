@@ -88,6 +88,45 @@ async function main(): Promise<void> {
         console.log(`    unexpected error type: ${e}`);
       }
     }
+
+    // 7. PIPELINE: atomic batch of commands on one round-trip.
+    try {
+      const results = await db.shroudb.pipeline([
+        ["PUT", "test-ns", "pipe-k1", "v1"],
+        ["PUT", "test-ns", "pipe-k2", "v2"],
+        ["GET", "test-ns", "pipe-k1"],
+      ]);
+      check("pipeline_returns_array", Array.isArray(results));
+      check("pipeline_length", results.length === 3);
+      check("pipeline_get_value", (results[2] as { value?: string }).value === "v1");
+    } catch (e: unknown) {
+      check("pipeline", false);
+      console.log(`    error: ${e}`);
+    }
+
+    // 8. PIPELINE idempotency: same request_id returns cached result.
+    try {
+      const rid = `test-idempotency-${Date.now()}`;
+      const first = await db.shroudb.pipeline(
+        [["PUT", "test-ns", "pipe-idem", "first"]],
+        rid,
+      );
+      const second = await db.shroudb.pipeline(
+        [["PUT", "test-ns", "pipe-idem", "second"]],
+        rid,
+      );
+      const firstVersion = (first[0] as { version?: number }).version;
+      const secondVersion = (second[0] as { version?: number }).version;
+      check("pipeline_idempotent_replay", firstVersion === secondVersion);
+      const current = await db.shroudb.get("test-ns", "pipe-idem");
+      check(
+        "pipeline_idempotent_value_unchanged",
+        (current as { value?: string }).value === "first",
+      );
+    } catch (e: unknown) {
+      check("pipeline_idempotency", false);
+      console.log(`    error: ${e}`);
+    }
   } finally {
     await db.close();
     check("close", true);

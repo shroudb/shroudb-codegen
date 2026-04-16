@@ -39,6 +39,15 @@ async function main(): Promise<void> {
       console.log(`    error: ${e}`);
     }
 
+    // 1b. Ping — added in Sigil v2.1 to restore uniform meta-command coverage.
+    try {
+      await db.sigil.ping();
+      check("ping", true);
+    } catch (e: unknown) {
+      check("ping", false);
+      console.log(`    error: ${e}`);
+    }
+
     // 2. Schema register (with credential field for verify/session tests)
     try {
       const schema = {

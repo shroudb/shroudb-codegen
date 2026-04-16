@@ -55,6 +55,13 @@ func main() {
 		fmt.Printf("    error: %v\n", err)
 	}
 
+	// 1b. Ping — added in Sigil v2.1 to restore uniform meta-command coverage.
+	_, err = db.Sigil.Ping(ctx)
+	check("ping", err == nil)
+	if err != nil {
+		fmt.Printf("    error: %v\n", err)
+	}
+
 	// 2. Schema register (with credential field for verify/session tests)
 	schemaJSON := map[string]any{
 		"fields": []map[string]any{

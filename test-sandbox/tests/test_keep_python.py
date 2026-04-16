@@ -125,6 +125,21 @@ async def main():
             check("error_deleted", False)
             print(f"    unexpected error type: {type(e).__name__}: {e}")
 
+        # get_many — batch variant emitted by `batchable = true` on GET.
+        try:
+            batch_paths = ["db/batch/a", "db/batch/b", "db/batch/c"]
+            for i, p in enumerate(batch_paths):
+                await db.keep.put(p, f"v{i}".encode())
+            results = await db.keep.get_many([{"path": p} for p in batch_paths])
+            check("get_many_length", len(results) == 3)
+            check(
+                "get_many_all_ok",
+                all(getattr(r, "status", None) == "ok" for r in results),
+            )
+        except Exception as e:
+            check("get_many", False)
+            print(f"    error: {e}")
+
     finally:
         await db.close()
         check("close", True)

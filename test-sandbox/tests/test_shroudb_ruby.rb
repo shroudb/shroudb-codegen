@@ -75,6 +75,35 @@ begin
     puts "    unexpected error type: #{e.class}: #{e.message}"
   end
 
+  # 7. PIPELINE: atomic batch of commands on one round-trip.
+  begin
+    results = db.shroudb.pipeline([
+      ["PUT", "test-ns", "pipe-k1", "v1"],
+      ["PUT", "test-ns", "pipe-k2", "v2"],
+      ["GET", "test-ns", "pipe-k1"]
+    ])
+    check("pipeline_returns_array", results.is_a?(Array))
+    check("pipeline_length", results.length == 3)
+    check("pipeline_get_value", results[2]["value"] == "v1")
+  rescue StandardError => e
+    check("pipeline", false)
+    puts "    error: #{e.message}"
+  end
+
+  # 8. PIPELINE idempotency: same request_id returns cached result.
+  begin
+    rid = "test-idempotency-#{Time.now.to_i}"
+    first = db.shroudb.pipeline([["PUT", "test-ns", "pipe-idem", "first"]], request_id: rid)
+    second = db.shroudb.pipeline([["PUT", "test-ns", "pipe-idem", "second"]], request_id: rid)
+    # Both calls should return the same version (second is cached, not re-executed).
+    check("pipeline_idempotent_replay", first[0]["version"] == second[0]["version"])
+    current = db.shroudb.get("test-ns", "pipe-idem")
+    check("pipeline_idempotent_value_unchanged", current["value"] == "first")
+  rescue StandardError => e
+    check("pipeline_idempotency", false)
+    puts "    error: #{e.message}"
+  end
+
 ensure
   db.close
   check("close", true)

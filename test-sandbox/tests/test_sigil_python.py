@@ -42,6 +42,14 @@ async def main():
             check("health", False)
             print(f"    error: {e}")
 
+        # ping — added in Sigil v2.1 to restore uniform meta-command coverage.
+        try:
+            result = await db.sigil.ping()
+            check("ping", result is not None)
+        except Exception as e:
+            check("ping", False)
+            print(f"    error: {e}")
+
         # schema_register (with credential field for verify/session tests)
         try:
             schema = {
