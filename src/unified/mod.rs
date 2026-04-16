@@ -26,10 +26,14 @@ pub trait UnifiedGenerator {
 }
 
 /// Generate unified RESP3 SDK files from a Moat composite spec.
-pub fn generate(spec_text: &str, lang: &str, base_dir: &Path) -> GenerateResult {
+///
+/// `sdk_version` is the ShrouDB client SDK's own version, independent of
+/// any individual engine's protocol version. Sourced from the `VERSION`
+/// file at the codegen repo root and baked into the binary at compile time.
+pub fn generate(spec_text: &str, lang: &str, base_dir: &Path, sdk_version: &str) -> GenerateResult {
     let moat_spec = MoatSpec::from_toml(spec_text)?;
     let resolved = moat_spec.resolve(base_dir)?;
-    let ir = UnifiedIR::from_resolved(&resolved)?;
+    let ir = UnifiedIR::from_resolved(&resolved, sdk_version)?;
 
     let generators = generators_for_lang(lang)?;
     Ok(generators

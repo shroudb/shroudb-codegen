@@ -53,6 +53,10 @@ fn gen_engine_namespace(ir: &UnifiedIR, engine: &EngineIR) -> GeneratedFile {
     for cmd in &engine.commands {
         out.push('\n');
         gen_command_method(&mut out, engine, cmd);
+        if cmd.batchable {
+            out.push('\n');
+            gen_batch_method(&mut out, engine, cmd);
+        }
     }
 
     out.push_str("  end\n");
@@ -252,5 +256,102 @@ fn gen_pipeline_method(out: &mut String, cmd: &CommandIR) {
     out.push_str("    # @return [Array<Hash>] one parsed response per sub-command\n");
     out.push_str("    def pipeline(commands, request_id: nil)\n");
     out.push_str("      @transport.execute_pipeline(@engine, commands, request_id)\n");
+    out.push_str("    end\n");
+}
+
+fn gen_batch_method(out: &mut String, engine: &EngineIR, cmd: &CommandIR) {
+    let method_name = format!("{base}_many", base = cmd.name.to_snake_case());
+    writeln!(
+        out,
+        "    # {verb} — batch variant: pipelines N independent calls over one connection (ordered, not atomic).",
+        verb = cmd.verb,
+    )
+    .unwrap();
+    out.push_str("    #\n");
+    out.push_str("    # @param calls [Array<Hash>] per-call arg bundles (keys = param names as symbols/strings)\n");
+    if cmd.response_fields.is_empty() {
+        out.push_str("    # @return [Array<Hash>] one parsed response per call\n");
+    } else {
+        writeln!(
+            out,
+            "    # @return [Array<{engine}::{cmd}Response>]",
+            engine = engine.name.to_pascal_case(),
+            cmd = cmd.name.to_pascal_case()
+        )
+        .unwrap();
+    }
+    writeln!(out, "    def {method_name}(calls)").unwrap();
+    out.push_str("      args_list = calls.map do |call|\n");
+    out.push_str("        call = call.transform_keys(&:to_s)\n");
+    out.push_str("        args = [");
+    write!(out, "\"{verb}\"", verb = cmd.verb).unwrap();
+    if let Some(sub) = &cmd.subcommand {
+        write!(out, ", \"{sub}\"").unwrap();
+    }
+    out.push_str("]\n");
+
+    for p in &cmd.positional_params {
+        let key = rb_safe_name(&p.name);
+        let accessor = format!("call[\"{key}\"]");
+        if p.required {
+            if let Some(k) = &p.wire_key {
+                writeln!(out, "        args << \"{k}\"").unwrap();
+            }
+            if p.type_key == "json" {
+                writeln!(
+                    out,
+                    "        args << ({accessor}.is_a?(String) ? {accessor} : JSON.generate({accessor}))"
+                )
+                .unwrap();
+            } else if engine.is_base64_type(&p.type_key) {
+                writeln!(
+                    out,
+                    "        args << ({accessor}.is_a?(String) ? {accessor} : Base64.strict_encode64({accessor}))"
+                )
+                .unwrap();
+            } else {
+                writeln!(out, "        args << {accessor}.to_s").unwrap();
+            }
+        } else if p.type_key == "json" {
+            writeln!(
+                out,
+                "        args << ({accessor}.is_a?(String) ? {accessor} : JSON.generate({accessor})) if call.key?(\"{key}\")"
+            )
+            .unwrap();
+        } else {
+            writeln!(
+                out,
+                "        args << {accessor}.to_s if call.key?(\"{key}\")"
+            )
+            .unwrap();
+        }
+    }
+
+    for p in &cmd.named_params {
+        let key = &p.name;
+        let accessor = format!("call[\"{key}\"]");
+        let default_key = p.name.to_uppercase();
+        let wire_key = p.wire_key.as_deref().unwrap_or(&default_key);
+        if p.type_key == "boolean" {
+            writeln!(out, "        args << \"{wire_key}\" if {accessor}").unwrap();
+        } else if p.type_key == "json" {
+            writeln!(out, "        if call.key?(\"{key}\")").unwrap();
+            writeln!(out, "          args << \"{wire_key}\"").unwrap();
+            writeln!(
+                out,
+                "          args << ({accessor}.is_a?(String) ? {accessor} : JSON.generate({accessor}))"
+            )
+            .unwrap();
+            out.push_str("        end\n");
+        } else {
+            writeln!(out, "        if call.key?(\"{key}\")").unwrap();
+            writeln!(out, "          args << \"{wire_key}\"").unwrap();
+            writeln!(out, "          args << {accessor}.to_s").unwrap();
+            out.push_str("        end\n");
+        }
+    }
+    out.push_str("        args\n");
+    out.push_str("      end\n");
+    out.push_str("      @transport.execute_many(@engine, args_list)\n");
     out.push_str("    end\n");
 }

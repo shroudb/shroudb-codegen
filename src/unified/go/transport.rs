@@ -22,6 +22,13 @@ type Transport interface {
 	// Execute sends a command and returns the parsed response.
 	Execute(ctx context.Context, engine string, args []string) (map[string]any, error)
 
+	// ExecuteMany sends N independent commands in one round-trip (client-side
+	// pipelining). Each command is a separate RESP3 frame on a single
+	// connection; N responses are returned in order. Unlike ExecutePipeline,
+	// this is NOT atomic — each command is independently dispatched,
+	// authorized, and audited by the server.
+	ExecuteMany(ctx context.Context, engine string, argsList [][]string) ([]map[string]any, error)
+
 	// ExecutePipeline sends a server-side atomic PIPELINE with N nested
 	// sub-command arrays in a single RESP3 frame and returns one result per
 	// sub-command, in order. Pass a non-empty requestID for idempotent retry —
@@ -333,6 +340,31 @@ func (t *Resp3Transport) Execute(ctx context.Context, engine string, args []stri
 	return parseResp3Response(raw), nil
 }
 
+// ExecuteMany sends N commands over one connection and returns N responses in order.
+func (t *Resp3Transport) ExecuteMany(ctx context.Context, engine string, argsList [][]string) ([]map[string]any, error) {
+	if len(argsList) == 0 {
+		return []map[string]any{}, nil
+	}
+	conn, err := t.pool.acquire()
+	if err != nil {
+		return nil, err
+	}
+	defer t.pool.release(conn)
+
+	out := make([]map[string]any, len(argsList))
+	for i, args := range argsList {
+		if err := conn.send(args); err != nil {
+			return nil, err
+		}
+		raw, err := conn.readReply()
+		if err != nil {
+			return nil, err
+		}
+		out[i] = parseResp3Response(raw)
+	}
+	return out, nil
+}
+
 // ExecutePipeline sends a server-side atomic PIPELINE over RESP3.
 func (t *Resp3Transport) ExecutePipeline(ctx context.Context, engine string, commands [][]string, requestID string) ([]map[string]any, error) {
 	conn, err := t.pool.acquire()
@@ -399,6 +431,35 @@ func (t *MoatResp3Transport) Execute(ctx context.Context, engine string, args []
 		return nil, err
 	}
 	return parseResp3Response(raw), nil
+}
+
+// ExecuteMany sends N engine-prefixed commands over one connection.
+func (t *MoatResp3Transport) ExecuteMany(ctx context.Context, engine string, argsList [][]string) ([]map[string]any, error) {
+	if len(argsList) == 0 {
+		return []map[string]any{}, nil
+	}
+	conn, err := t.pool.acquire()
+	if err != nil {
+		return nil, err
+	}
+	defer t.pool.release(conn)
+
+	prefix := strings.ToUpper(engine)
+	out := make([]map[string]any, len(argsList))
+	for i, args := range argsList {
+		prefixed := make([]string, 0, len(args)+1)
+		prefixed = append(prefixed, prefix)
+		prefixed = append(prefixed, args...)
+		if err := conn.send(prefixed); err != nil {
+			return nil, err
+		}
+		raw, err := conn.readReply()
+		if err != nil {
+			return nil, err
+		}
+		out[i] = parseResp3Response(raw)
+	}
+	return out, nil
 }
 
 // ExecutePipeline sends a server-side atomic PIPELINE through a Moat gateway,
@@ -599,6 +660,19 @@ func (t *HttpTransport) Execute(ctx context.Context, engine string, args []strin
 		return nil, fmt.Errorf("http: unmarshal response: %w", err)
 	}
 	return result, nil
+}
+
+// ExecuteMany falls back to sequential HTTP requests since HTTP has no pipelining.
+func (t *HttpTransport) ExecuteMany(ctx context.Context, engine string, argsList [][]string) ([]map[string]any, error) {
+	out := make([]map[string]any, 0, len(argsList))
+	for _, args := range argsList {
+		resp, err := t.Execute(ctx, engine, args)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, resp)
+	}
+	return out, nil
 }
 
 // ExecutePipeline always returns ErrPipelineNotSupported; PIPELINE requires RESP3.

@@ -31,6 +31,20 @@ module ShrouDB
         raise NotImplementedError, "#{self.class}#execute is not implemented"
       end
 
+      # Execute N independent commands in one round-trip (client-side pipelining).
+      #
+      # Sends each command as a separate RESP3 frame on a single connection
+      # and collects N responses in order. Unlike +execute_pipeline+, this is
+      # **not** atomic — each command is independently dispatched, authorized,
+      # and audited by the server.
+      #
+      # @param engine [String] the engine name
+      # @param args_list [Array<Array<String>>] per-call args
+      # @return [Array<Hash>] one parsed response per call
+      def execute_many(engine, args_list)
+        raise NotImplementedError, "#{self.class}#execute_many is not implemented"
+      end
+
       # Execute a server-side atomic PIPELINE.
       #
       # Sends +PIPELINE+ with N nested sub-command arrays in a single RESP3
@@ -284,6 +298,16 @@ module ShrouDB
         end
       end
 
+      def execute_many(_engine, args_list)
+        return [] if args_list.empty?
+        @pool.with do |conn|
+          args_list.map do |args|
+            raw = conn.execute(*args)
+            self.class.parse_response(raw)
+          end
+        end
+      end
+
       def execute_pipeline(_engine, commands, request_id = nil)
         @pool.with do |conn|
           raw = conn.execute_pipeline_frame(["PIPELINE"], commands, request_id)
@@ -325,6 +349,17 @@ module ShrouDB
         @pool.with do |conn|
           raw = conn.execute(*prefixed)
           Resp3Transport.parse_response(raw)
+        end
+      end
+
+      def execute_many(engine, args_list)
+        return [] if args_list.empty?
+        prefix = engine.upcase
+        @pool.with do |conn|
+          args_list.map do |args|
+            raw = conn.execute(prefix, *args)
+            Resp3Transport.parse_response(raw)
+          end
         end
       end
 
@@ -381,6 +416,11 @@ module ShrouDB
         @base_url = base_url.chomp("/")
         @token = token
         @prefixes = prefixes
+      end
+
+      def execute_many(engine, args_list)
+        # HTTP has no pipelining; fall back to sequential requests.
+        args_list.map {{ |args| execute(engine, args) }}
       end
 
       def execute_pipeline(_engine, _commands, _request_id = nil)

@@ -64,6 +64,12 @@ pub struct CommandIR {
     pub error_refs: Vec<String>,
     /// HTTP endpoint metadata (if the command has an HTTP API mapping).
     pub http: Option<HttpEndpointIR>,
+    /// Emit a `{cmd}_many` batch helper alongside the regular method. The
+    /// generated helper pipelines N calls as independent RESP3 frames over a
+    /// single connection — ordered, not atomic. Opt-in per command in
+    /// `protocol.toml` via `batchable = true`. Intended for read commands;
+    /// setting this on a write command implies ordering but not atomicity.
+    pub batchable: bool,
 }
 
 /// HTTP REST endpoint metadata parsed from `http = { method, path, request_body }`.
@@ -110,7 +116,15 @@ pub struct ErrorCodeIR {
 
 impl UnifiedIR {
     /// Build the IR from a resolved Moat spec.
-    pub fn from_resolved(resolved: &ResolvedMoatSpec) -> Result<Self, Box<dyn std::error::Error>> {
+    ///
+    /// `sdk_version` is stamped into the IR as the generated SDK's version.
+    /// It is explicitly decoupled from `moat.protocol.version` — the SDK is
+    /// a distributable client package with its own release cadence, not a
+    /// mirror of Moat's protocol version.
+    pub fn from_resolved(
+        resolved: &ResolvedMoatSpec,
+        sdk_version: &str,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         let moat = &resolved.moat;
 
         let sdk = moat.sdk.as_ref();
@@ -216,7 +230,7 @@ impl UnifiedIR {
         }
 
         Ok(Self {
-            version: moat.protocol.version.clone(),
+            version: sdk_version.to_string(),
             packages,
             engines,
             moat_http_port: moat.protocol.default_http_port,
@@ -342,6 +356,11 @@ fn parse_standard_command(
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
+    let batchable = table
+        .get("batchable")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
     // Parse params array.
     let mut positional_params = Vec::new();
     let mut named_params = Vec::new();
@@ -435,6 +454,7 @@ fn parse_standard_command(
         response_fields,
         error_refs,
         http: parse_http_annotation(table),
+        batchable,
     })
 }
 
@@ -616,6 +636,10 @@ fn parse_syntax_command(
         response_fields,
         error_refs,
         http: parse_http_annotation(table),
+        batchable: table
+            .get("batchable")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
     })
 }
 
@@ -706,6 +730,10 @@ fn parse_implicit_command(
         response_fields,
         error_refs: Vec::new(),
         http: parse_http_annotation(table),
+        batchable: table
+            .get("batchable")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
     })
 }
 

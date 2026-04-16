@@ -62,6 +62,10 @@ fn gen_engine_file(engine: &EngineIR) -> GeneratedFile {
     for cmd in &engine.commands {
         out.push('\n');
         gen_command_method(&mut out, engine, cmd);
+        if cmd.batchable {
+            out.push('\n');
+            gen_batch_method(&mut out, engine, cmd);
+        }
     }
 
     GeneratedFile {
@@ -286,6 +290,110 @@ fn gen_pipeline_method(out: &mut String, engine: &EngineIR, cmd: &CommandIR) {
     )
     .unwrap();
     out.push_str("\treturn ns.transport.ExecutePipeline(ctx, ns.engine, commands, requestID)\n");
+    out.push_str("}\n");
+}
+
+fn gen_batch_method(out: &mut String, engine: &EngineIR, cmd: &CommandIR) {
+    let pascal = engine.name.to_pascal_case();
+    let method_name = format!("{}Many", cmd.name.to_pascal_case());
+    let call_struct = format!("{pascal}{}Call", cmd.name.to_pascal_case());
+
+    // Emit a per-call struct with one field per positional/named param.
+    writeln!(
+        out,
+        "// {call_struct} carries one call for the {method_name} batch helper.",
+    )
+    .unwrap();
+    writeln!(out, "type {call_struct} struct {{").unwrap();
+    for p in &cmd.positional_params {
+        let field = p.name.to_pascal_case();
+        let go_type = if engine.is_base64_type(&p.type_key) {
+            "[]byte".to_string()
+        } else if !p.required {
+            // Optional positionals become pointer types so callers can omit.
+            let base = crate::unified::go::types::resolve_go_type(engine, &p.type_key);
+            format!("*{base}")
+        } else {
+            crate::unified::go::types::resolve_go_type(engine, &p.type_key)
+        };
+        writeln!(out, "\t{field} {go_type}").unwrap();
+    }
+    for p in &cmd.named_params {
+        let field = p.name.to_pascal_case();
+        let base = crate::unified::go::types::resolve_go_type(engine, &p.type_key);
+        writeln!(out, "\t{field} *{base}").unwrap();
+    }
+    out.push_str("}\n\n");
+
+    writeln!(
+        out,
+        "// {method_name} — batch variant: pipelines N independent calls over one connection (ordered, not atomic)."
+    )
+    .unwrap();
+    writeln!(
+        out,
+        "func (ns *{pascal}Namespace) {method_name}(ctx context.Context, calls []{call_struct}) ([]map[string]any, error) {{"
+    )
+    .unwrap();
+    out.push_str("\targsList := make([][]string, 0, len(calls))\n");
+    out.push_str("\tfor _, call := range calls {\n");
+    out.push_str("\t\targs := []string{");
+    write!(out, "\"{}\"", cmd.verb).unwrap();
+    if let Some(sub) = &cmd.subcommand {
+        write!(out, ", \"{sub}\"").unwrap();
+    }
+    out.push_str("}\n");
+
+    for p in &cmd.positional_params {
+        let field = p.name.to_pascal_case();
+        if p.required {
+            if let Some(k) = &p.wire_key {
+                writeln!(out, "\t\targs = append(args, \"{k}\")").unwrap();
+            }
+            if engine.is_base64_type(&p.type_key) {
+                writeln!(
+                    out,
+                    "\t\targs = append(args, base64.StdEncoding.EncodeToString(call.{field}))"
+                )
+                .unwrap();
+            } else if p.type_key == "json" {
+                writeln!(
+                    out,
+                    "\t\tif b, err := json.Marshal(call.{field}); err != nil {{\n\t\t\treturn nil, fmt.Errorf(\"marshal {field}: %w\", err)\n\t\t}} else {{\n\t\t\targs = append(args, string(b))\n\t\t}}"
+                )
+                .unwrap();
+            } else {
+                writeln!(out, "\t\targs = append(args, fmt.Sprint(call.{field}))").unwrap();
+            }
+        } else {
+            writeln!(out, "\t\tif call.{field} != nil {{").unwrap();
+            writeln!(out, "\t\t\targs = append(args, fmt.Sprint(*call.{field}))").unwrap();
+            out.push_str("\t\t}\n");
+        }
+    }
+
+    for p in &cmd.named_params {
+        let field = p.name.to_pascal_case();
+        let default_key = p.name.to_uppercase();
+        let wire_key = p.wire_key.as_deref().unwrap_or(&default_key);
+        if p.type_key == "boolean" {
+            writeln!(out, "\t\tif call.{field} != nil && *call.{field} {{").unwrap();
+            writeln!(out, "\t\t\targs = append(args, \"{wire_key}\")").unwrap();
+            out.push_str("\t\t}\n");
+        } else {
+            writeln!(out, "\t\tif call.{field} != nil {{").unwrap();
+            writeln!(
+                out,
+                "\t\t\targs = append(args, \"{wire_key}\", fmt.Sprint(*call.{field}))"
+            )
+            .unwrap();
+            out.push_str("\t\t}\n");
+        }
+    }
+
+    out.push_str("\t\targsList = append(argsList, args)\n");
+    out.push_str("\t}\n");
+    out.push_str("\treturn ns.transport.ExecuteMany(ctx, ns.engine, argsList)\n");
     out.push_str("}\n");
 }
 

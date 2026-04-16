@@ -110,6 +110,10 @@ fn gen_engine_namespace(pkg: &str, engine: &EngineIR) -> GeneratedFile {
     for cmd in &engine.commands {
         out.push('\n');
         gen_command_method(&mut out, engine, cmd);
+        if cmd.batchable {
+            out.push('\n');
+            gen_batch_method(&mut out, engine, cmd);
+        }
     }
 
     GeneratedFile {
@@ -321,6 +325,135 @@ fn gen_pipeline_method(out: &mut String, cmd: &CommandIR) {
         "        return await self._transport.execute_pipeline(self._engine, commands, request_id)"
     )
     .unwrap();
+}
+
+fn gen_batch_method(out: &mut String, engine: &EngineIR, cmd: &CommandIR) {
+    let method_name = format!("{base}_many", base = cmd.name.to_snake_case());
+
+    writeln!(out, "    async def {method_name}(").unwrap();
+    out.push_str("        self,\n");
+    out.push_str("        calls: list[dict[str, Any]],\n");
+
+    let item_return_type = if cmd.response_fields.is_empty() {
+        "list[dict[str, Any]]".to_string()
+    } else {
+        format!(
+            "list[_types.{}{}Response]",
+            engine.name.to_pascal_case(),
+            cmd.name.to_pascal_case()
+        )
+    };
+    writeln!(out, "    ) -> {item_return_type}:").unwrap();
+    writeln!(
+        out,
+        "        \"\"\"{verb} — batch variant: pipelines N independent calls over one connection (ordered, not atomic).\"\"\"",
+        verb = cmd.verb,
+    )
+    .unwrap();
+    out.push_str("        args_list: list[list[str]] = []\n");
+    out.push_str("        for call in calls:\n");
+    out.push_str("            args: list[str] = [");
+    write!(out, "\"{}\"", cmd.verb).unwrap();
+    if let Some(sub) = &cmd.subcommand {
+        write!(out, ", \"{sub}\"").unwrap();
+    }
+    out.push_str("]\n");
+
+    for p in &cmd.positional_params {
+        let key = py_safe_name(&p.name);
+        let accessor = format!("call[\"{key}\"]");
+        if p.required {
+            if let Some(k) = &p.wire_key {
+                writeln!(out, "            args.append(\"{k}\")").unwrap();
+            }
+            if p.type_key == "json" {
+                writeln!(
+                    out,
+                    "            args.append({accessor} if isinstance({accessor}, str) else json.dumps({accessor}))"
+                )
+                .unwrap();
+            } else if engine.is_base64_type(&p.type_key) {
+                writeln!(
+                    out,
+                    "            args.append({accessor} if isinstance({accessor}, str) else base64.b64encode({accessor}).decode())"
+                )
+                .unwrap();
+            } else {
+                writeln!(out, "            args.append(str({accessor}))").unwrap();
+            }
+        } else {
+            writeln!(out, "            if \"{key}\" in call:").unwrap();
+            if p.type_key == "json" {
+                writeln!(
+                    out,
+                    "                args.append({accessor} if isinstance({accessor}, str) else json.dumps({accessor}))"
+                )
+                .unwrap();
+            } else {
+                writeln!(out, "                args.append(str({accessor}))").unwrap();
+            }
+        }
+    }
+
+    for p in &cmd.named_params {
+        let name_upper = p.name.to_uppercase();
+        let wire_key = p.wire_key.as_deref().unwrap_or(&name_upper);
+        let key = &p.name;
+        let accessor = format!("call[\"{key}\"]");
+        if p.type_key == "boolean" {
+            writeln!(
+                out,
+                "            if call.get(\"{key}\"): args.append(\"{wire_key}\")"
+            )
+            .unwrap();
+        } else if p.type_key == "json" {
+            writeln!(out, "            if \"{key}\" in call:").unwrap();
+            writeln!(out, "                args.append(\"{wire_key}\")").unwrap();
+            writeln!(
+                out,
+                "                args.append({accessor} if isinstance({accessor}, str) else json.dumps({accessor}))"
+            )
+            .unwrap();
+        } else {
+            writeln!(out, "            if \"{key}\" in call:").unwrap();
+            writeln!(out, "                args.append(\"{wire_key}\")").unwrap();
+            writeln!(out, "                args.append(str({accessor}))").unwrap();
+        }
+    }
+    out.push_str("            args_list.append(args)\n");
+
+    if cmd.response_fields.is_empty() {
+        out.push_str(
+            "        return await self._transport.execute_many(self._engine, args_list)\n",
+        );
+    } else {
+        out.push_str(
+            "        results = await self._transport.execute_many(self._engine, args_list)\n",
+        );
+        let type_name = format!(
+            "_types.{}{}Response",
+            engine.name.to_pascal_case(),
+            cmd.name.to_pascal_case()
+        );
+        let field_args: Vec<String> = cmd
+            .response_fields
+            .iter()
+            .map(|f| {
+                let default = if f.optional {
+                    String::new()
+                } else {
+                    format!(", {}", py_zero_value(&f.type_key))
+                };
+                format!("{}=r.get(\"{}\"{})", f.name, f.name, default)
+            })
+            .collect();
+        writeln!(
+            out,
+            "        return [{type_name}({args}) for r in results]",
+            args = field_args.join(", ")
+        )
+        .unwrap();
+    }
 }
 
 fn py_zero_value(type_key: &str) -> &'static str {

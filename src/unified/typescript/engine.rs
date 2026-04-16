@@ -63,6 +63,10 @@ fn gen_engine_namespace(_ir: &UnifiedIR, engine: &EngineIR) -> GeneratedFile {
     for cmd in &engine.commands {
         out.push('\n');
         gen_command_method(&mut out, engine, cmd);
+        if cmd.batchable {
+            out.push('\n');
+            gen_batch_method(&mut out, engine, cmd);
+        }
     }
 
     out.push_str("}\n");
@@ -227,5 +231,120 @@ fn gen_pipeline_method(out: &mut String, cmd: &CommandIR) {
         "  async pipeline(commands: string[][], requestId?: string): Promise<CommandResult[]> {\n",
     );
     out.push_str("    return this.transport.executePipeline(this.engine, commands, requestId);\n");
+    out.push_str("  }\n");
+}
+
+fn gen_batch_method(out: &mut String, engine: &EngineIR, cmd: &CommandIR) {
+    let method_base = cmd.name.to_lower_camel_case();
+    let method_name = format!("{method_base}Many");
+
+    // Build the flat "call bundle" type — one field per positional/named param.
+    let mut bundle_fields = Vec::new();
+    for p in &cmd.positional_params {
+        let ts_type = if engine.is_base64_type(&p.type_key) {
+            "string | Uint8Array".to_string()
+        } else {
+            resolve_ts_type(engine, &p.type_key)
+        };
+        let safe_name = ts_safe_name(&p.name);
+        let opt = if p.required { "" } else { "?" };
+        bundle_fields.push(format!("    {safe_name}{opt}: {ts_type};"));
+    }
+    for p in &cmd.named_params {
+        let ts_type = resolve_ts_type(engine, &p.type_key);
+        bundle_fields.push(format!("    {name}?: {ts_type};", name = p.name));
+    }
+    let bundle_type = format!("Array<{{\n{}\n  }}>", bundle_fields.join("\n"));
+
+    // Return type mirrors the single-call variant.
+    let item_return_type = if cmd.response_fields.is_empty() {
+        "CommandResult".to_string()
+    } else {
+        format!(
+            "types.{}{}Response",
+            engine.name.to_pascal_case(),
+            cmd.name.to_pascal_case()
+        )
+    };
+
+    writeln!(out, "  /** {} — batch variant: pipelines N independent calls over one connection (ordered, not atomic). */", cmd.verb).unwrap();
+    writeln!(
+        out,
+        "  async {method_name}(calls: {bundle_type}): Promise<{item_return_type}[]> {{"
+    )
+    .unwrap();
+
+    // Build the args-list via a map over calls.
+    out.push_str("    const argsList: string[][] = calls.map((call) => {\n");
+    out.push_str("      const args: string[] = [");
+    write!(out, "\"{}\"", cmd.verb).unwrap();
+    if let Some(sub) = &cmd.subcommand {
+        write!(out, ", \"{sub}\"").unwrap();
+    }
+    out.push_str("];\n");
+
+    for p in &cmd.positional_params {
+        let safe_name = ts_safe_name(&p.name);
+        let accessor = format!("call.{safe_name}");
+        let guard = if !p.required {
+            format!("      if ({accessor} !== undefined) ")
+        } else {
+            "      ".to_string()
+        };
+        if p.required
+            && let Some(k) = &p.wire_key
+        {
+            writeln!(out, "      args.push(\"{k}\");").unwrap();
+        }
+        if p.type_key == "json" {
+            writeln!(
+                out,
+                "{guard}args.push(typeof {accessor} === 'string' ? {accessor} : JSON.stringify({accessor}));"
+            )
+            .unwrap();
+        } else if engine.is_base64_type(&p.type_key) {
+            writeln!(
+                out,
+                "{guard}args.push(typeof {accessor} === 'string' ? {accessor} : Buffer.from({accessor}).toString('base64'));"
+            )
+            .unwrap();
+        } else {
+            writeln!(out, "{guard}args.push(String({accessor}));").unwrap();
+        }
+    }
+
+    for p in &cmd.named_params {
+        let accessor = format!("call.{name}", name = p.name);
+        let name_upper = p.name.to_uppercase();
+        let wire_key = p.wire_key.as_deref().unwrap_or(&name_upper);
+        if p.type_key == "boolean" {
+            writeln!(out, "      if ({accessor}) args.push(\"{wire_key}\");").unwrap();
+        } else if p.type_key == "json" {
+            writeln!(
+                out,
+                "      if ({accessor} !== undefined) {{ args.push(\"{wire_key}\"); args.push(typeof {accessor} === 'string' ? {accessor} : JSON.stringify({accessor})); }}"
+            )
+            .unwrap();
+        } else {
+            writeln!(
+                out,
+                "      if ({accessor} !== undefined) {{ args.push(\"{wire_key}\"); args.push(String({accessor})); }}"
+            )
+            .unwrap();
+        }
+    }
+
+    out.push_str("      return args;\n");
+    out.push_str("    });\n");
+
+    if item_return_type == "CommandResult" {
+        out.push_str("    return this.transport.executeMany(this.engine, argsList);\n");
+    } else {
+        writeln!(
+            out,
+            "    return this.transport.executeMany(this.engine, argsList) as unknown as Promise<{item_return_type}[]>;"
+        )
+        .unwrap();
+    }
     out.push_str("  }\n");
 }

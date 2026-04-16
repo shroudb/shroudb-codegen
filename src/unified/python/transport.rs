@@ -39,6 +39,20 @@ class Transport(abc.ABC):
         """Execute a command and return the parsed response."""
 
     @abc.abstractmethod
+    async def execute_many(
+        self,
+        engine: str,
+        args_list: list[list[str]],
+    ) -> list[dict[str, Any]]:
+        """Execute N independent commands in one round-trip.
+
+        Sends each command as a separate RESP3 frame on a single connection and
+        collects N responses in order. Unlike ``execute_pipeline``, this is
+        **not** atomic — each command is independently dispatched, authorized,
+        and audited by the server.
+        """
+
+    @abc.abstractmethod
     async def execute_pipeline(
         self,
         engine: str,
@@ -372,6 +386,23 @@ class Resp3Transport(Transport):
         finally:
             self._pool.release(conn)
 
+    async def execute_many(
+        self,
+        engine: str,
+        args_list: list[list[str]],
+    ) -> list[dict[str, Any]]:
+        if not args_list:
+            return []
+        conn = await self._pool.acquire()
+        try:
+            results: list[dict[str, Any]] = []
+            for args in args_list:
+                raw = await conn.execute(*args)
+                results.append(_parse_response(raw))
+            return results
+        finally:
+            self._pool.release(conn)
+
     async def execute_pipeline(
         self,
         engine: str,
@@ -415,6 +446,24 @@ class MoatResp3Transport(Transport):
         try:
             raw = await conn.execute(*prefixed)
             return _parse_response(raw)
+        finally:
+            self._pool.release(conn)
+
+    async def execute_many(
+        self,
+        engine: str,
+        args_list: list[list[str]],
+    ) -> list[dict[str, Any]]:
+        if not args_list:
+            return []
+        prefix = engine.upper()
+        conn = await self._pool.acquire()
+        try:
+            results: list[dict[str, Any]] = []
+            for args in args_list:
+                raw = await conn.execute(prefix, *args)
+                results.append(_parse_response(raw))
+            return results
         finally:
             self._pool.release(conn)
 
@@ -476,6 +525,17 @@ class HttpTransport(Transport):
         self._base_url = base_url.rstrip("/")
         self._token = token
         self._prefixes = prefixes or {}
+
+    async def execute_many(
+        self,
+        engine: str,
+        args_list: list[list[str]],
+    ) -> list[dict[str, Any]]:
+        # HTTP has no pipelining; fall back to sequential requests, returning in order.
+        results: list[dict[str, Any]] = []
+        for args in args_list:
+            results.append(await self.execute(engine, args))
+        return results
 
     async def execute_pipeline(
         self,

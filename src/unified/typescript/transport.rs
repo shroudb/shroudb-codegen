@@ -26,6 +26,17 @@ export interface Transport {
   execute(engine: string, args: string[]): Promise<CommandResult>;
 
   /**
+   * Execute N independent commands in one round-trip (client-side pipelining).
+   *
+   * Sends each command as a separate RESP3 frame on a single connection and
+   * collects N responses in order. Unlike `executePipeline`, this is **not**
+   * atomic — each command is independently dispatched, authorized, and
+   * audited by the server. Use this for read-heavy batches that want to
+   * collapse round-trip latency without atomicity.
+   */
+  executeMany(engine: string, argsList: string[][]): Promise<CommandResult[]>;
+
+  /**
    * Execute a server-side atomic PIPELINE.
    *
    * Sends `PIPELINE` with N nested sub-command arrays in a single RESP3 frame
@@ -357,6 +368,18 @@ export class Resp3Transport implements Transport {
     }
   }
 
+  async executeMany(_engine: string, argsList: string[][]): Promise<CommandResult[]> {
+    if (argsList.length === 0) return [];
+    const conn = await this.pool.acquire();
+    try {
+      for (const args of argsList) conn.bufferCommand(args);
+      const raw = await conn.flushBuffered();
+      return raw.map(parseResponse);
+    } finally {
+      this.pool.release(conn);
+    }
+  }
+
   async executePipeline(
     _engine: string,
     commands: string[][],
@@ -423,6 +446,19 @@ export class MoatResp3Transport implements Transport {
     try {
       const raw = await conn.execute(...prefixed);
       return parseResponse(raw);
+    } finally {
+      this.pool.release(conn);
+    }
+  }
+
+  async executeMany(engine: string, argsList: string[][]): Promise<CommandResult[]> {
+    if (argsList.length === 0) return [];
+    const prefix = engine.toUpperCase();
+    const conn = await this.pool.acquire();
+    try {
+      for (const args of argsList) conn.bufferCommand([prefix, ...args]);
+      const raw = await conn.flushBuffered();
+      return raw.map(parseResponse);
     } finally {
       this.pool.release(conn);
     }
@@ -555,6 +591,15 @@ export class HttpTransport implements Transport {
     if (this.baseUrl.endsWith("/")) {
       this.baseUrl = this.baseUrl.slice(0, -1);
     }
+  }
+
+  async executeMany(engine: string, argsList: string[][]): Promise<CommandResult[]> {
+    // HTTP has no pipelining; fall back to sequential requests, returning in order.
+    const results: CommandResult[] = [];
+    for (const args of argsList) {
+      results.push(await this.execute(engine, args));
+    }
+    return results;
   }
 
   async executePipeline(
