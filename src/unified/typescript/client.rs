@@ -131,7 +131,14 @@ fn gen_client(ir: &UnifiedIR) -> GeneratedFile {
         out.push_str("    } else {\n");
         writeln!(
             out,
-            "      this.{name} = new {pascal}Namespace({{ execute: () => {{ throw new Error('No transport configured for {name}. Provide a moat URL or {name} URI.'); }}, buffer: () => {{}}, flush: async () => [], close: async () => {{}} }}, \"{name}\");",
+            "      this.{name} = new {pascal}Namespace({{ \
+                 execute: () => {{ throw new Error('No transport configured for {name}. Provide a moat URL or {name} URI.'); }}, \
+                 executeMany: () => {{ throw new Error('No transport configured for {name}. Provide a moat URL or {name} URI.'); }}, \
+                 executePipeline: () => {{ throw new Error('No transport configured for {name}. Provide a moat URL or {name} URI.'); }}, \
+                 buffer: () => {{}}, \
+                 flush: async () => [], \
+                 close: async () => {{}} \
+             }}, \"{name}\");",
             name = engine.name
         )
         .unwrap();
