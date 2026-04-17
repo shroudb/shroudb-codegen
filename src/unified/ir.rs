@@ -28,6 +28,10 @@ pub struct SdkPackages {
 pub struct EngineIR {
     pub name: String,
     pub description: String,
+    /// Engine's semantic version, from `[protocol] version = "..."` in its
+    /// `protocol.toml`. Stamped into the generated SDK's compatibility
+    /// manifest as the minimum supported version for this engine.
+    pub version: String,
     pub default_port: u16,
     pub uri_schemes: Vec<String>,
     pub http_prefix: String,
@@ -217,6 +221,7 @@ impl UnifiedIR {
             engines.push(EngineIR {
                 name: engine_ref.name.clone(),
                 description: spec.protocol.description.clone(),
+                version: spec.protocol.version.clone(),
                 default_port: spec.protocol.default_tcp_port,
                 uri_schemes: spec.protocol.uri_schemes.clone(),
                 http_prefix,
@@ -284,6 +289,7 @@ impl UnifiedIR {
         let engine = EngineIR {
             name: engine_name.to_string(),
             description: spec.protocol.description.clone(),
+            version: spec.protocol.version.clone(),
             default_port: spec.protocol.default_tcp_port,
             uri_schemes: spec.protocol.uri_schemes.clone(),
             http_prefix: format!("/v1/{engine_name}"),

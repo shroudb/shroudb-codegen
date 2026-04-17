@@ -6,6 +6,7 @@
 //! Also supports HTTP-only SDK generation via `generate_http` for engines
 //! with REST API endpoints (e.g., Sigil).
 
+pub mod compat;
 pub mod go;
 pub mod ir;
 pub mod python;
@@ -36,9 +37,17 @@ pub fn generate(spec_text: &str, lang: &str, base_dir: &Path, sdk_version: &str)
     let ir = UnifiedIR::from_resolved(&resolved, sdk_version)?;
 
     let generators = generators_for_lang(lang)?;
+    let compat = compat::generate(&ir);
     Ok(generators
         .iter()
-        .map(|g| (g.language().to_string(), g.generate(&ir)))
+        .map(|g| {
+            let mut files = g.generate(&ir);
+            files.push(GeneratedFile {
+                path: compat.path.clone(),
+                content: compat.content.clone(),
+            });
+            (g.language().to_string(), files)
+        })
         .collect())
 }
 
