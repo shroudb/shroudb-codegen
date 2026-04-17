@@ -26,6 +26,17 @@ async function main(): Promise<void> {
   const db = new ShrouDB({ forge: uri });
 
   try {
+    // Handshake sanity — every engine must answer HELLO.
+    try {
+      const h = await db.forge.hello();
+      check("hello: ok", true);
+      check("hello: engine name", h.engine === "forge");
+      check("hello: version not empty", typeof h.version === "string" && h.version.length > 0);
+      check("hello: protocol", h.protocol === "RESP3/1");
+    } catch (e) {
+      check("hello: ok", false);
+    }
+
     // 1. Health via ca_list (forge has no RESP3 HEALTH command)
     try {
       await db.forge.caList();

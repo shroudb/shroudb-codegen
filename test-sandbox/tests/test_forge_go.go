@@ -42,6 +42,17 @@ func main() {
 		}
 	}()
 
+	// Handshake sanity — every engine must answer HELLO.
+	{
+		h, err := db.Forge.Hello(ctx)
+		check("hello: ok", err == nil)
+		if err == nil {
+			check("hello: engine name", h.Engine == "forge")
+			check("hello: version not empty", h.Version != "")
+			check("hello: protocol", h.Protocol == "RESP3/1")
+		}
+	}
+
 	// 1. Health via ca_list (forge has no RESP3 HEALTH command)
 	_, err = db.Forge.CaList(ctx)
 	check("health_via_ca_list", err == nil)

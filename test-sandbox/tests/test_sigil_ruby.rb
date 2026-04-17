@@ -27,6 +27,17 @@ envelope_id = "test-envelope-1"
 user_id = "test-user-1"
 
 begin
+  # Handshake sanity — every engine must answer HELLO.
+  begin
+    h = db.sigil.hello
+    check("hello: ok", true)
+    check("hello: engine name", h.engine == "sigil")
+    check("hello: version not empty", h.version.is_a?(String) && !h.version.empty?)
+    check("hello: protocol", h.protocol == "RESP3/1")
+  rescue StandardError
+    check("hello: ok", false)
+  end
+
   # 1. Health
   begin
     result = db.sigil.health

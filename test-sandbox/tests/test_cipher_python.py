@@ -33,6 +33,16 @@ async def main():
     data_raw = b"sign this message"
 
     try:
+        # Handshake sanity — every engine must answer HELLO.
+        try:
+            h = await db.cipher.hello()
+            check("hello: ok", True)
+            check("hello: engine name", h.engine == "cipher")
+            check("hello: version not empty", isinstance(h.version, str) and len(h.version) > 0)
+            check("hello: protocol", h.protocol == "RESP3/1")
+        except Exception:
+            check("hello: ok", False)
+
         # health
         try:
             await db.cipher.health()

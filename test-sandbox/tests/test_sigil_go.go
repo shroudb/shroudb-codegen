@@ -48,6 +48,17 @@ func main() {
 	envelopeId := "test-envelope-1"
 	userId := "test-user-1"
 
+	// Handshake sanity — every engine must answer HELLO.
+	{
+		h, err := db.Sigil.Hello(ctx)
+		check("hello: ok", err == nil)
+		if err == nil {
+			check("hello: engine name", h.Engine == "sigil")
+			check("hello: version not empty", h.Version != "")
+			check("hello: protocol", h.Protocol == "RESP3/1")
+		}
+	}
+
 	// 1. Health
 	_, err = db.Sigil.Health(ctx)
 	check("health", err == nil)

@@ -32,6 +32,16 @@ async def main():
     import time; blob_id = f"test-blob-py-{int(time.time()) % 100000}"
 
     try:
+        # Handshake sanity — every engine must answer HELLO.
+        try:
+            h = await db.stash.hello()
+            check("hello: ok", True)
+            check("hello: engine name", h.engine == "stash")
+            check("hello: version not empty", isinstance(h.version, str) and len(h.version) > 0)
+            check("hello: protocol", h.protocol == "RESP3/1")
+        except Exception:
+            check("hello: ok", False)
+
         # health
         try:
             await db.stash.health()

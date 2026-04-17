@@ -26,6 +26,17 @@ plaintext_b64 = Base64.strict_encode64("hello world")
 data_b64 = Base64.strict_encode64("sign this message")
 
 begin
+  # Handshake sanity — every engine must answer HELLO.
+  begin
+    h = db.cipher.hello
+    check("hello: ok", true)
+    check("hello: engine name", h.engine == "cipher")
+    check("hello: version not empty", h.version.is_a?(String) && !h.version.empty?)
+    check("hello: protocol", h.protocol == "RESP3/1")
+  rescue StandardError
+    check("hello: ok", false)
+  end
+
   # 1. Health
   begin
     db.cipher.health

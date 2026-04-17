@@ -30,6 +30,17 @@ async function main(): Promise<void> {
   const userId = "test-user-1";
 
   try {
+    // Handshake sanity — every engine must answer HELLO.
+    try {
+      const h = await db.sigil.hello();
+      check("hello: ok", true);
+      check("hello: engine name", h.engine === "sigil");
+      check("hello: version not empty", typeof h.version === "string" && h.version.length > 0);
+      check("hello: protocol", h.protocol === "RESP3/1");
+    } catch (e) {
+      check("hello: ok", false);
+    }
+
     // 1. Health
     try {
       await db.sigil.health();

@@ -15,6 +15,17 @@ async function main() {
   const blobId = `test-blob-ts-${Date.now() % 100000}`;
 
   try {
+    // Handshake sanity — every engine must answer HELLO.
+    try {
+      const h = await db.stash.hello();
+      check("hello: ok", true);
+      check("hello: engine name", h.engine === "stash");
+      check("hello: version not empty", typeof h.version === "string" && h.version.length > 0);
+      check("hello: protocol", h.protocol === "RESP3/1");
+    } catch (e) {
+      check("hello: ok", false);
+    }
+
     try { await db.stash.health(); check("health", true); }
     catch (e) { check("health", false); console.log(`    ${e}`); }
 

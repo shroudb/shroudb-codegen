@@ -29,6 +29,16 @@ async def main():
     db = ShrouDB(forge=uri)
 
     try:
+        # Handshake sanity — every engine must answer HELLO.
+        try:
+            h = await db.forge.hello()
+            check("hello: ok", True)
+            check("hello: engine name", h.engine == "forge")
+            check("hello: version not empty", isinstance(h.version, str) and len(h.version) > 0)
+            check("hello: protocol", h.protocol == "RESP3/1")
+        except Exception:
+            check("hello: ok", False)
+
         # ca_list serves as health check (forge has no RESP3 HEALTH command)
         try:
             result = await db.forge.ca_list()

@@ -43,6 +43,17 @@ func main() {
 		}
 	}()
 
+	// Handshake sanity — every engine must answer HELLO.
+	{
+		h, err := db.Chronicle.Hello(ctx)
+		check("hello: ok", err == nil)
+		if err == nil {
+			check("hello: engine name", h.Engine == "chronicle")
+			check("hello: version not empty", h.Version != "")
+			check("hello: protocol", h.Protocol == "RESP3/1")
+		}
+	}
+
 	// 1. Health
 	_, err = db.Chronicle.Health(ctx)
 	check("health", err == nil)

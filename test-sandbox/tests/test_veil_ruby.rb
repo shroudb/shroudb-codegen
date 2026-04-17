@@ -28,6 +28,17 @@ db = ShrouDB::Client.new(veil: uri)
 idx_name = "test-idx-#{Time.now.to_i % 10000}"
 
 begin
+  # Handshake sanity — every engine must answer HELLO.
+  begin
+    h = db.veil.hello
+    check("hello: ok", true)
+    check("hello: engine name", h.engine == "veil")
+    check("hello: version not empty", h.version.is_a?(String) && !h.version.empty?)
+    check("hello: protocol", h.protocol == "RESP3/1")
+  rescue StandardError
+    check("hello: ok", false)
+  end
+
   # 1. Health
   begin
     result = db.veil.health

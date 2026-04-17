@@ -22,6 +22,17 @@ uri = ENV.fetch("SHROUDB_FORGE_TEST_URI", "shroudb-forge://127.0.0.1:6699")
 db = ShrouDB::Client.new(forge: uri)
 
 begin
+  # Handshake sanity — every engine must answer HELLO.
+  begin
+    h = db.forge.hello
+    check("hello: ok", true)
+    check("hello: engine name", h.engine == "forge")
+    check("hello: version not empty", h.version.is_a?(String) && !h.version.empty?)
+    check("hello: protocol", h.protocol == "RESP3/1")
+  rescue StandardError
+    check("hello: ok", false)
+  end
+
   # 1. Health via ca_list (forge has no RESP3 HEALTH command)
   begin
     result = db.forge.ca_list

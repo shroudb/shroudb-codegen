@@ -53,6 +53,17 @@ func main() {
 
 	idxName := fmt.Sprintf("test-idx-%d", time.Now().Unix()%10000)
 
+	// Handshake sanity — every engine must answer HELLO.
+	{
+		h, err := db.Veil.Hello(ctx)
+		check("hello: ok", err == nil)
+		if err == nil {
+			check("hello: engine name", h.Engine == "veil")
+			check("hello: version not empty", h.Version != "")
+			check("hello: protocol", h.Protocol == "RESP3/1")
+		}
+	}
+
 	// 1. Health
 	_, err = db.Veil.Health(ctx)
 	check("health", err == nil)

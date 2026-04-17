@@ -23,6 +23,17 @@ uri = ENV.fetch("SHROUDB_CHRONICLE_TEST_URI", "shroudb-chronicle://127.0.0.1:689
 db = ShrouDB::Client.new(chronicle: uri)
 
 begin
+  # Handshake sanity — every engine must answer HELLO.
+  begin
+    h = db.chronicle.hello
+    check("hello: ok", true)
+    check("hello: engine name", h.engine == "chronicle")
+    check("hello: version not empty", h.version.is_a?(String) && !h.version.empty?)
+    check("hello: protocol", h.protocol == "RESP3/1")
+  rescue StandardError
+    check("hello: ok", false)
+  end
+
   # 1. Health
   begin
     result = db.chronicle.health

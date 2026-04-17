@@ -27,6 +27,17 @@ async function main(): Promise<void> {
   const db = new ShrouDB({ courier: uri });
 
   try {
+    // Handshake sanity — every engine must answer HELLO.
+    try {
+      const h = await db.courier.hello();
+      check("hello: ok", true);
+      check("hello: engine name", h.engine === "courier");
+      check("hello: version not empty", typeof h.version === "string" && h.version.length > 0);
+      check("hello: protocol", h.protocol === "RESP3/1");
+    } catch (e) {
+      check("hello: ok", false);
+    }
+
     // 1. Health
     await db.courier.health();
     check("health", true);

@@ -32,6 +32,17 @@ func main() {
 	blobData := base64.StdEncoding.EncodeToString([]byte("hello encrypted world"))
 	blobID := fmt.Sprintf("test-blob-go-%d", os.Getpid())
 
+	// Handshake sanity — every engine must answer HELLO.
+	{
+		h, err := db.Stash.Hello(ctx)
+		check("hello: ok", err == nil)
+		if err == nil {
+			check("hello: engine name", h.Engine == "stash")
+			check("hello: version not empty", h.Version != "")
+			check("hello: protocol", h.Protocol == "RESP3/1")
+		}
+	}
+
 	err = db.Stash.Health(ctx)
 	check("health", err == nil)
 	if err != nil { fmt.Printf("    error: %v\n", err) }

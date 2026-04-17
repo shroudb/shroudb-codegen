@@ -45,6 +45,17 @@ func main() {
 		}
 	}()
 
+	// Handshake sanity — every engine must answer HELLO.
+	{
+		h, err := db.Cipher.Hello(ctx)
+		check("hello: ok", err == nil)
+		if err == nil {
+			check("hello: engine name", h.Engine == "cipher")
+			check("hello: version not empty", h.Version != "")
+			check("hello: protocol", h.Protocol == "RESP3/1")
+		}
+	}
+
 	// 1. Health
 	_, err = db.Cipher.Health(ctx)
 	check("health", err == nil)

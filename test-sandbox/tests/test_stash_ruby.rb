@@ -14,6 +14,17 @@ blob_data = Base64.strict_encode64("hello encrypted world")
 blob_id = "test-blob-rb-#{Time.now.to_i % 100000}"
 
 begin
+  # Handshake sanity — every engine must answer HELLO.
+  begin
+    h = db.stash.hello
+    check("hello: ok", true)
+    check("hello: engine name", h.engine == "stash")
+    check("hello: version not empty", h.version.is_a?(String) && !h.version.empty?)
+    check("hello: protocol", h.protocol == "RESP3/1")
+  rescue StandardError
+    check("hello: ok", false)
+  end
+
   begin; db.stash.health; check("health", true)
   rescue => e; check("health", false); puts "    error: #{e.message}"; end
 

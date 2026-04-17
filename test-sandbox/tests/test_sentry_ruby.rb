@@ -23,6 +23,17 @@ uri = ENV.fetch("SHROUDB_SENTRY_TEST_URI", "shroudb-sentry://127.0.0.1:6499")
 db = ShrouDB::Client.new(sentry: uri)
 
 begin
+  # Handshake sanity — every engine must answer HELLO.
+  begin
+    h = db.sentry.hello
+    check("hello: ok", true)
+    check("hello: engine name", h.engine == "sentry")
+    check("hello: version not empty", h.version.is_a?(String) && !h.version.empty?)
+    check("hello: protocol", h.protocol == "RESP3/1")
+  rescue StandardError
+    check("hello: ok", false)
+  end
+
   # 1. Health
   begin
     result = db.sentry.health

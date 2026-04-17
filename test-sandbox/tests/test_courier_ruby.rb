@@ -23,6 +23,17 @@ uri = ENV.fetch("SHROUDB_COURIER_TEST_URI", "shroudb-courier://127.0.0.1:6899")
 db = ShrouDB::Client.new(courier: uri)
 
 begin
+  # Handshake sanity — every engine must answer HELLO.
+  begin
+    h = db.courier.hello
+    check("hello: ok", true)
+    check("hello: engine name", h.engine == "courier")
+    check("hello: version not empty", h.version.is_a?(String) && !h.version.empty?)
+    check("hello: protocol", h.protocol == "RESP3/1")
+  rescue StandardError
+    check("hello: ok", false)
+  end
+
   # 1. Health
   db.courier.health
   check("health", true)

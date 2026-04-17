@@ -44,6 +44,17 @@ func main() {
 		}
 	}()
 
+	// Handshake sanity — every engine must answer HELLO.
+	{
+		h, err := db.Sentry.Hello(ctx)
+		check("hello: ok", err == nil)
+		if err == nil {
+			check("hello: engine name", h.Engine == "sentry")
+			check("hello: version not empty", h.Version != "")
+			check("hello: protocol", h.Protocol == "RESP3/1")
+		}
+	}
+
 	// 1. Health
 	_, err = db.Sentry.Health(ctx)
 	check("health", err == nil)

@@ -33,6 +33,17 @@ async function main(): Promise<void> {
   const dataB64 = b64encode("sign this message");
 
   try {
+    // Handshake sanity — every engine must answer HELLO.
+    try {
+      const h = await db.cipher.hello();
+      check("hello: ok", true);
+      check("hello: engine name", h.engine === "cipher");
+      check("hello: version not empty", typeof h.version === "string" && h.version.length > 0);
+      check("hello: protocol", h.protocol === "RESP3/1");
+    } catch (e) {
+      check("hello: ok", false);
+    }
+
     // 1. Health
     try {
       await db.cipher.health();

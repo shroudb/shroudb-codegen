@@ -31,6 +31,16 @@ async def main():
     db = ShrouDB(sentry=uri)
 
     try:
+        # Handshake sanity — every engine must answer HELLO.
+        try:
+            h = await db.sentry.hello()
+            check("hello: ok", True)
+            check("hello: engine name", h.engine == "sentry")
+            check("hello: version not empty", isinstance(h.version, str) and len(h.version) > 0)
+            check("hello: protocol", h.protocol == "RESP3/1")
+        except Exception:
+            check("hello: ok", False)
+
         # health
         try:
             result = await db.sentry.health()
