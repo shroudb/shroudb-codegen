@@ -51,7 +51,8 @@ jobs:
           ./target/release/shroudb-codegen \
             --spec ../shroudb-moat/protocol.toml \
             --lang all \
-            --output /tmp/sdk-output
+            --output /tmp/sdk-output \
+            --sdk-version 0.0.0-ci
 
       - name: Verify TypeScript compiles
         run: |
