@@ -33,17 +33,23 @@ jobs:
       - name: Build codegen
         run: cargo build --release
 
-      # The SDK version lives in the VERSION file at the codegen repo root
-      # and is baked into the binary via include_str!. It is intentionally
-      # independent of any engine's protocol version — bump this file and
-      # rebuild to cut a new SDK release.
+      # SDK version is auto-derived from the triggering Moat release's tag.
+      # Safe because codegen only runs on Moat releases (per-engine triggers
+      # were removed from the reusable release workflow) and Moat's tags are
+      # monotonically increasing by design, so SDK versions stay monotonic
+      # on the registry. For manual workflow_dispatch runs, a dev-build
+      # fallback is used.
       - name: Resolve SDK version
         id: version
         run: |
-          VERSION="$(cat VERSION | tr -d '[:space:]')"
-          if [ -z "$VERSION" ]; then
-            echo "VERSION file is empty or missing" >&2
-            exit 1
+          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            VERSION="${{ github.event.client_payload.moat_version }}"
+            if [ -z "$VERSION" ]; then
+              echo "repository_dispatch payload is missing moat_version" >&2
+              exit 1
+            fi
+          else
+            VERSION="0.0.0-dev.$(date +%Y%m%d%H%M%S)"
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
@@ -59,11 +65,20 @@ jobs:
 
       - name: Generate unified SDKs
         run: |
-          $CODEGEN_BIN --spec ../shroudb-moat/protocol.toml --lang all --output generated/
+          $CODEGEN_BIN \
+            --spec ../shroudb-moat/protocol.toml \
+            --lang all \
+            --output generated/ \
+            --sdk-version "${{ steps.version.outputs.version }}"
 
       - name: Generate Sigil HTTP SDK
         run: |
-          $CODEGEN_BIN --spec ../shroudb-sigil/protocol.toml --lang all --output generated-http/ --http
+          $CODEGEN_BIN \
+            --spec ../shroudb-sigil/protocol.toml \
+            --lang all \
+            --output generated-http/ \
+            --http \
+            --sdk-version "${{ steps.version.outputs.version }}"
 
       # ── Update SDK repos ───────────────────────────────────────────
 

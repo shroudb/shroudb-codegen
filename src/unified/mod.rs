@@ -55,7 +55,14 @@ pub fn generate(spec_text: &str, lang: &str, base_dir: &Path, sdk_version: &str)
 ///
 /// Reads a single engine's protocol.toml (not the Moat composite), finds
 /// commands with HTTP endpoints, and generates a standalone HTTP client.
-pub fn generate_http(spec_text: &str, lang: &str, _base_dir: &Path) -> GenerateResult {
+/// If `sdk_version` is supplied it overrides the engine's own protocol
+/// version; otherwise the engine's protocol.version is used.
+pub fn generate_http(
+    spec_text: &str,
+    lang: &str,
+    _base_dir: &Path,
+    sdk_version: Option<&str>,
+) -> GenerateResult {
     // Wrap the single spec in a synthetic Moat envelope so we can reuse the IR.
     let spec = crate::spec::wire::ProtocolSpec::from_toml(spec_text)?;
     let engine_name = spec
@@ -64,7 +71,10 @@ pub fn generate_http(spec_text: &str, lang: &str, _base_dir: &Path) -> GenerateR
         .replace("shroudb-", "")
         .replace("shroudb", "core");
 
-    let ir = ir::UnifiedIR::from_single_engine(&engine_name, &spec)?;
+    let mut ir = ir::UnifiedIR::from_single_engine(&engine_name, &spec)?;
+    if let Some(v) = sdk_version {
+        ir.version = v.to_string();
+    }
 
     // Find the engine with HTTP endpoints.
     let engine = ir

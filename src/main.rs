@@ -10,12 +10,6 @@
 use clap::Parser;
 use shroudb_codegen::cli::{CodegenCli, run};
 
-/// SDK version baked in at compile time from `VERSION` at the repo root.
-/// This is the ShrouDB client SDK's own version — explicitly independent
-/// of any single engine's protocol version. Bump this file and rebuild to
-/// cut a new SDK release.
-const SDK_VERSION: &str = include_str!("../VERSION");
-
 #[derive(Parser)]
 #[command(
     name = "shroudb-codegen",
@@ -32,17 +26,20 @@ fn main() {
     let cli = Cli::parse();
     let spec_path = cli.inner.spec.clone();
     let is_http = cli.inner.http;
-    let sdk_version = SDK_VERSION.trim();
 
-    run(&cli.inner, |spec_text, lang| {
+    run(&cli.inner, |spec_text, lang, sdk_version| {
         let base_dir = spec_path
             .parent()
             .unwrap_or_else(|| std::path::Path::new("."));
 
         if is_http {
-            shroudb_codegen::unified::generate_http(spec_text, lang, base_dir)
+            shroudb_codegen::unified::generate_http(spec_text, lang, base_dir, sdk_version)
         } else {
-            shroudb_codegen::unified::generate(spec_text, lang, base_dir, sdk_version)
+            let version = sdk_version.ok_or(
+                "--sdk-version is required in composite (Moat) mode. CI derives \
+                 this from the triggering Moat release's tag.",
+            )?;
+            shroudb_codegen::unified::generate(spec_text, lang, base_dir, version)
         }
     });
 }

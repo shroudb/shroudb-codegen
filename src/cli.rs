@@ -28,18 +28,28 @@ pub struct CodegenCli {
     /// Generate HTTP REST SDK instead of RESP3 (for engines with HTTP APIs)
     #[arg(long)]
     pub http: bool,
+
+    /// SDK version to stamp into the generated manifests. In CI this is the
+    /// triggering Moat release's tag — derived monotonically from a single
+    /// source since only Moat triggers codegen. Required for composite
+    /// (non-`--http`) mode; in `--http` mode the engine's own protocol
+    /// version is used as the fallback when this is omitted.
+    #[arg(long)]
+    pub sdk_version: Option<String>,
 }
 
 /// Run the codegen pipeline.
 ///
-/// `generate` takes `(spec_text, lang)` and returns `Vec<(language_name, files)>`.
-pub fn run(cli: &CodegenCli, generate: impl Fn(&str, &str) -> GenerateResult) {
+/// `generate` takes `(spec_text, lang, sdk_version)` and returns
+/// `Vec<(language_name, files)>`. `sdk_version` is the value of
+/// `--sdk-version` if provided, else `None`.
+pub fn run(cli: &CodegenCli, generate: impl Fn(&str, &str, Option<&str>) -> GenerateResult) {
     let spec_text = std::fs::read_to_string(&cli.spec).unwrap_or_else(|e| {
         eprintln!("Error reading spec file {:?}: {e}", cli.spec);
         std::process::exit(1);
     });
 
-    let results = generate(&spec_text, &cli.lang).unwrap_or_else(|e| {
+    let results = generate(&spec_text, &cli.lang, cli.sdk_version.as_deref()).unwrap_or_else(|e| {
         eprintln!("Error: {e}");
         std::process::exit(1);
     });
