@@ -83,12 +83,15 @@ async function main(): Promise<void> {
     // read
     try {
       const res = await db.scroll.read(log, 0, 10);
-      const entries = (res as { entries: { payload_b64: string }[] }).entries ?? [];
+      const entries = (res as { entries: unknown[] }).entries ?? [];
       check("read: count", entries.length === 2);
-      check(
-        "read: payload roundtrip",
-        Buffer.from(entries[0].payload_b64, "base64").toString() === "hello scroll",
-      );
+      // Entries are typed as unknown[] (codegen doesn't emit a typed
+      // LogEntry); walk the raw object to verify the payload.
+      const first = entries[0] as { payload_b64?: string };
+      const decoded = first?.payload_b64
+        ? Buffer.from(first.payload_b64, "base64").toString()
+        : "";
+      check("read: payload roundtrip", decoded === "hello scroll");
     } catch (e: unknown) {
       check("read: count", false);
       console.log(`    error: ${e}`);

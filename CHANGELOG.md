@@ -6,6 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## Unreleased
 
+## [v0.2.1] - 2026-04-17
+
+### Fixed
+
+- Sandbox: pass `--sdk-version` to codegen so the composite-spec mode
+  doesn't reject the invocation (the CLI requires it whenever the spec
+  targets Moat).
+- Sandbox: chronicle config used `[storage]` — the struct field is
+  `store`, so the key was silently ignored and chronicle fell back to
+  `./chronicle-data`, polluting the sandbox working directory on every
+  run. Config now uses `[store]`.
+- Sandbox: engine startup budget raised from 5s to 15s. Chronicle's
+  index rebuild routinely exceeded 5s on cold start, aborting the
+  sandbox before any tests ran.
+- Sandbox: seed the `scroll-sandbox` Cipher keyring via `shroudb-cipher-cli`
+  right before starting scroll-server. scroll-server requires a remote
+  Cipher keyring to exist before the first APPEND, and Cipher does not
+  auto-seed keyrings at startup.
+- Sandbox: scroll tests walk raw entry dicts/hashes directly since
+  codegen does not yet emit a typed `LogEntry` (entries come back as
+  `list[Any]` / `unknown[]` / `[]any`). Tests defensively support both
+  typed-object and raw-map access patterns so they'll tighten up
+  automatically once the typed shape lands.
+
 ## [v0.2.0] - 2026-04-17
 
 ### Added

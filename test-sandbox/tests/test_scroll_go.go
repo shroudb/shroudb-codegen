@@ -82,8 +82,13 @@ func main() {
 	rr, err := db.Scroll.Read(ctx, log, 0, 10)
 	if err == nil && rr != nil {
 		check("read: count", len(rr.Entries) == 2)
-		decoded, decErr := base64.StdEncoding.DecodeString(rr.Entries[0].PayloadB64)
-		check("read: payload roundtrip", decErr == nil && string(decoded) == "hello scroll")
+		// Entries are typed as []any (codegen doesn't emit LogEntry
+		// structs yet); treat the first element as a JSON map to
+		// verify the payload roundtrip.
+		entry, ok := rr.Entries[0].(map[string]any)
+		payloadB64, _ := entry["payload_b64"].(string)
+		decoded, decErr := base64.StdEncoding.DecodeString(payloadB64)
+		check("read: payload roundtrip", ok && decErr == nil && string(decoded) == "hello scroll")
 	} else {
 		check("read: count", false)
 		if err != nil {

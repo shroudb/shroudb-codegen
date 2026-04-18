@@ -1,7 +1,7 @@
 [server]
 tcp_bind = "127.0.0.1:{{PORT}}"
 
-[storage]
+[store]
 data_dir = "{{DATA_DIR}}"
 
 [engine]

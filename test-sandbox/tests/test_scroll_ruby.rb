@@ -74,7 +74,12 @@ begin
     rr = db.scroll.read(log, 0, 10)
     entries = rr.entries || []
     check("read: count", entries.length == 2)
-    check("read: payload roundtrip", Base64.strict_decode64(entries[0].payload_b64) == "hello scroll")
+    # Entries come back as raw Hashes (codegen doesn't emit a typed
+    # LogEntry) — fall back to [] lookup when the attribute reader is
+    # absent.
+    first = entries[0]
+    payload_b64 = first.respond_to?(:payload_b64) ? first.payload_b64 : first["payload_b64"]
+    check("read: payload roundtrip", Base64.strict_decode64(payload_b64) == "hello scroll")
   rescue StandardError => e
     check("read: count", false)
     puts "    error: #{e.message}"

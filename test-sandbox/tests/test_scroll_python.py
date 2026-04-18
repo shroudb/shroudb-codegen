@@ -83,7 +83,11 @@ async def main():
             result = await db.scroll.read(log, 0, 10)
             entries = getattr(result, "entries", [])
             check("read: count", len(entries) == 2)
-            check("read: payload roundtrip", base64.b64decode(entries[0].payload_b64) == b"hello scroll")
+            # Entries come back as raw dicts (codegen doesn't emit a
+            # typed LogEntry). Pull payload_b64 as an item lookup.
+            first = entries[0]
+            payload_b64 = first["payload_b64"] if isinstance(first, dict) else first.payload_b64
+            check("read: payload roundtrip", base64.b64decode(payload_b64) == b"hello scroll")
         except Exception as e:
             check("read: count", False)
             print(f"    error: {e}")

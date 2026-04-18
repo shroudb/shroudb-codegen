@@ -104,7 +104,8 @@ cd "$SCRIPT_DIR"
 rm -rf generated/
 
 cargo run --manifest-path "$CODEGEN_DIR/Cargo.toml" --release -- \
-  --spec "$MOAT_SPEC" --lang all --output generated/
+  --spec "$MOAT_SPEC" --lang all --output generated/ \
+  --sdk-version "0.0.0-sandbox"
 
 echo ""
 
@@ -136,16 +137,18 @@ start_engine() {
   local pid=$!
   PIDS="$PIDS $pid"
 
-  # Poll until TCP port is reachable.
+  # Poll until TCP port is reachable. Chronicle in particular can take
+  # several seconds to rebuild its index on cold start, so the budget
+  # needs to be generous enough for realistic dev-machine timings.
   local ready=false
-  for _ in $(seq 1 50); do
+  for _ in $(seq 1 150); do
     if python3 -c "import socket; s=socket.socket(); s.settimeout(0.5); exit(0 if s.connect_ex(('127.0.0.1',$port))==0 else 1)" 2>/dev/null; then
       ready=true; break
     fi
     sleep 0.1
   done
   if [[ "$ready" != "true" ]]; then
-    echo "ERROR: $name did not start within 5 seconds on port $port"
+    echo "ERROR: $name did not start within 15 seconds on port $port"
     exit 1
   fi
   echo "  $name ready on port $port (PID $pid)"
@@ -201,7 +204,17 @@ for engine in $AVAILABLE_ENGINES; do
   bin_var="BIN_${engine}"
   config_var="CONFIG_${engine}"
 
-  # No pre-setup needed — engines create their own resources.
+  # Scroll requires the remote Cipher keyring it's configured to use
+  # (test-scroll-config.toml → "scroll-sandbox") to exist before the
+  # first APPEND. Cipher doesn't seed keyrings at startup, so create
+  # it here via the cipher CLI now that cipher is running.
+  if [[ "$engine" == "scroll" ]]; then
+    cipher_cli="$(find_binary shroudb-cipher-cli "$(engine_dir cipher)")"
+    if [[ -n "$cipher_cli" && -n "${PORT_cipher:-}" ]]; then
+      "$cipher_cli" --addr "127.0.0.1:${PORT_cipher}" \
+        KEYRING CREATE scroll-sandbox AES-256-GCM >/dev/null 2>&1 || true
+    fi
+  fi
 
   start_engine "$engine" "${!bin_var}" "${!config_var}" "$port" "$http_port"
   eval "PORT_${engine}=$port"
