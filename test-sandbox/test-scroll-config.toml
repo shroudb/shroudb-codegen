@@ -1,0 +1,16 @@
+# Scroll test server configuration.
+#
+# Scroll requires a remote Cipher server for per-log DEK wrapping.
+# The run-tests.sh harness starts Cipher first and substitutes
+# {{CIPHER_PORT}} below; when CIPHER_PORT is empty, the `[cipher]`
+# section is still emitted pointing at port 0 so the engine fails
+# loudly rather than running without encryption.
+[server]
+tcp_bind = "127.0.0.1:{{PORT}}"
+
+[store]
+data_dir = "{{DATA_DIR}}"
+
+[cipher]
+addr = "127.0.0.1:{{CIPHER_PORT}}"
+keyring = "scroll-sandbox"

@@ -36,7 +36,7 @@ cargo test --workspace
 
 Codegen has no Cargo crate dependencies on other ShrouDB repos, but it reads `protocol.toml` specs via the Moat composite spec and generates unified SDK clients (TypeScript, Python, Go, Ruby) from them.
 
-- **Entry point:** `shroudb-moat/protocol.toml` — the composite spec that references all 9 engine specs
-- **Spec inputs (upstream):** shroudb, shroudb-cipher, shroudb-sigil, shroudb-veil, shroudb-sentry, shroudb-forge, shroudb-keep, shroudb-courier, shroudb-chronicle — each provides a `protocol.toml` that Moat references
+- **Entry point:** `shroudb-moat/protocol.toml` — the composite spec that references every engine spec
+- **Spec inputs (upstream):** shroudb, shroudb-cipher, shroudb-sigil, shroudb-veil, shroudb-sentry, shroudb-forge, shroudb-keep, shroudb-courier, shroudb-chronicle, shroudb-stash, shroudb-scroll — each provides a `protocol.toml` that Moat references
 - **Generated SDKs (downstream):** One unified SDK per language with all engines namespaced. Changes to codegen templates or output structure affect all generated SDKs. After any codegen change, regenerate and verify.
 - **Reverse direction:** When any engine changes its `protocol.toml`, regenerate all SDKs.

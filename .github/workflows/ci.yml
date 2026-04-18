@@ -40,7 +40,8 @@ jobs:
           # Clone all repos so the Moat composite spec can resolve relative paths.
           cd ..
           for repo in shroudb shroudb-cipher shroudb-sigil shroudb-forge shroudb-sentry \
-                      shroudb-keep shroudb-courier shroudb-chronicle shroudb-veil shroudb-stash shroudb-moat; do
+                      shroudb-keep shroudb-courier shroudb-chronicle shroudb-veil shroudb-stash \
+                      shroudb-scroll shroudb-moat; do
             gh repo clone "shroudb/$repo" -- --depth 1 2>/dev/null || true
           done
         env:

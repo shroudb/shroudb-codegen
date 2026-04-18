@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## Unreleased
 
+## [v0.2.0] - 2026-04-17
+
+### Added
+
+- Scroll engine support end-to-end. `.github/workflows/ci.yml` and
+  `.github/workflows/generate.yml` now clone `shroudb-scroll` so the Moat
+  composite spec can resolve the new `[[engines]].name = "scroll"` entry.
+  Sandbox gains `test-sandbox/test-scroll-config.toml` plus four integration
+  tests (`test_scroll_python.py`, `_typescript.ts`, `_go.go`, `_ruby.rb`)
+  covering hello → append → read → create_group → read_group → ack →
+  log_info → group_info → delete_group → delete_log. `run-tests.sh` adds
+  `scroll` to the engine list and wires `{{CIPHER_PORT}}` substitution so
+  scroll-server can reach the sandbox's remote Cipher.
+
 ### Fixed
 
 - Emit required keyword-prefixed params on the wire in all 4 SDKs. Required

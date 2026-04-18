@@ -37,7 +37,7 @@ fi
 # ── Engine definitions ───────────────────────────────────────────────────
 # Each engine: name, directory, binary name, config template
 
-ENGINES="shroudb cipher sigil forge sentry keep courier chronicle veil stash"
+ENGINES="shroudb cipher sigil forge sentry keep courier chronicle veil stash scroll"
 
 engine_dir() {
   local d="$SCRIPT_DIR/../../shroudb"
@@ -126,7 +126,7 @@ start_engine() {
 
   # Build config file from template.
   local cfg="$DATA_DIR/${name}-config.toml"
-  sed -e "s|{{PORT}}|$port|g" -e "s|{{DATA_DIR}}|$data|g" -e "s|{{HTTP_PORT}}|${http_port:-0}|g" -e "s|{{MINIO_PORT}}|${MINIO_PORT:-9000}|g" "$config" > "$cfg"
+  sed -e "s|{{PORT}}|$port|g" -e "s|{{DATA_DIR}}|$data|g" -e "s|{{HTTP_PORT}}|${http_port:-0}|g" -e "s|{{MINIO_PORT}}|${MINIO_PORT:-9000}|g" -e "s|{{CIPHER_PORT}}|${PORT_cipher:-0}|g" "$config" > "$cfg"
 
   SHROUDB_MASTER_KEY="$MASTER_KEY" \
     AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID:-}" \
