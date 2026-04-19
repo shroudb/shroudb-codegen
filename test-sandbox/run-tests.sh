@@ -127,7 +127,7 @@ start_engine() {
 
   # Build config file from template.
   local cfg="$DATA_DIR/${name}-config.toml"
-  sed -e "s|{{PORT}}|$port|g" -e "s|{{DATA_DIR}}|$data|g" -e "s|{{HTTP_PORT}}|${http_port:-0}|g" -e "s|{{MINIO_PORT}}|${MINIO_PORT:-9000}|g" -e "s|{{CIPHER_PORT}}|${PORT_cipher:-0}|g" "$config" > "$cfg"
+  sed -e "s|{{PORT}}|$port|g" -e "s|{{DATA_DIR}}|$data|g" -e "s|{{HTTP_PORT}}|${http_port:-0}|g" -e "s|{{MINIO_PORT}}|${MINIO_PORT:-9000}|g" -e "s|{{CIPHER_PORT}}|${PORT_cipher:-0}|g" -e "s|{{SENTRY_PORT}}|${PORT_sentry:-0}|g" "$config" > "$cfg"
 
   SHROUDB_MASTER_KEY="$MASTER_KEY" \
     AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID:-}" \
@@ -200,7 +200,12 @@ fi
 
 for engine in $AVAILABLE_ENGINES; do
   port=$(find_free_port 16000)
-  http_port=""
+  # Allocate an HTTP port for engines whose server binds an HTTP endpoint
+  # alongside RESP3 (sigil, forge, chronicle, veil). Empty for the rest.
+  case "$engine" in
+    sigil|forge|chronicle|veil) http_port=$(find_free_port 17000) ;;
+    *) http_port="" ;;
+  esac
   bin_var="BIN_${engine}"
   config_var="CONFIG_${engine}"
 

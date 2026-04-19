@@ -1,5 +1,6 @@
 [server]
 tcp_bind = "127.0.0.1:{{PORT}}"
+http_bind = "127.0.0.1:{{HTTP_PORT}}"
 
 [store]
 data_dir = "{{DATA_DIR}}"
@@ -7,3 +8,12 @@ data_dir = "{{DATA_DIR}}"
 [engine]
 max_events = 10000
 max_age_days = 1
+
+# Chronicle is a deliberate exception to engine-bootstrap's default-disabled
+# policy: ChronicleEngine enforces require_policy at the engine layer and
+# refuses a Disabled capability. The sandbox wires chronicle at a remote
+# Sentry; test-sentry-config.toml seeds a broad allow policy at priority 1
+# so chronicle's ingest/query goes through.
+[policy]
+mode = "remote"
+addr = "127.0.0.1:{{SENTRY_PORT}}"

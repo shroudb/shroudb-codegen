@@ -1,5 +1,15 @@
 [server]
 tcp_bind = "127.0.0.1:{{PORT}}"
+http_bind = "127.0.0.1:{{HTTP_PORT}}"
 
-[storage]
+[store]
 data_dir = "{{DATA_DIR}}"
+
+# Veil-server defaults `engine.require_audit = true` and
+# `engine.require_policy = true` — production postures that demand
+# Enabled capabilities. The sandbox's engine-bootstrap defaults resolve
+# to embedded audit + disabled policy, which tripped require_policy.
+# Opt out explicitly for sandbox-only end-to-end testing.
+[engine]
+require_audit = false
+require_policy = false

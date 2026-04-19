@@ -79,15 +79,15 @@ func main() {
 			{
 				"name":       "username",
 				"field_type": "string",
-				"annotations": map[string]any{
-					"index": true,
+				"kind": map[string]any{
+					"type": "index",
 				},
 			},
 			{
 				"name":       "password",
 				"field_type": "string",
-				"annotations": map[string]any{
-					"credential": true,
+				"kind": map[string]any{
+					"type": "credential",
 				},
 			},
 		},

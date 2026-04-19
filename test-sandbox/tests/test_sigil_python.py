@@ -64,8 +64,8 @@ async def main():
         try:
             schema = {
                 "fields": [
-                    {"name": "username", "field_type": "string", "annotations": {"index": True}},
-                    {"name": "password", "field_type": "string", "annotations": {"credential": True}},
+                    {"name": "username", "field_type": "string", "kind": {"type": "index"}},
+                    {"name": "password", "field_type": "string", "kind": {"type": "credential"}},
                 ],
             }
             result = await db.sigil.schema_register(schema_name, schema)

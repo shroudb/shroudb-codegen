@@ -1,5 +1,16 @@
 [server]
 tcp_bind = "127.0.0.1:{{PORT}}"
+http_bind = "127.0.0.1:{{HTTP_PORT}}"
 
-[storage]
+[store]
 data_dir = "{{DATA_DIR}}"
+
+# Sandbox-only — see test-cipher-config.toml. Sigil names these slots
+# `chronicle` / `sentry` (post-DEBT-F1 rename) instead of audit/policy.
+[chronicle]
+mode = "disabled"
+justification = "sandbox: SDK wire-compatibility test, not production posture"
+
+[sentry]
+mode = "disabled"
+justification = "sandbox: SDK wire-compatibility test, not production posture"

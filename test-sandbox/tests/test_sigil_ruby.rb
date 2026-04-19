@@ -60,8 +60,8 @@ begin
   begin
     schema = {
       "fields" => [
-        { "name" => "username", "field_type" => "string", "annotations" => { "index" => true } },
-        { "name" => "password", "field_type" => "string", "annotations" => { "credential" => true } }
+        { "name" => "username", "field_type" => "string", "kind" => { "type" => "index" } },
+        { "name" => "password", "field_type" => "string", "kind" => { "type" => "credential" } }
       ]
     }
     result = db.sigil.schema_register(schema_name, schema)

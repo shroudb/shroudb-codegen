@@ -1,8 +1,20 @@
 [server]
 tcp_bind = "127.0.0.1:{{PORT}}"
 
-[storage]
+[store]
 data_dir = "{{DATA_DIR}}"
+
+# Sandbox-only: audit/policy explicitly disabled so the engine's
+# check_policy and audit paths treat operations as permitted without
+# needing a seeded Sentry or a real actor. Production configs must pick
+# real modes.
+[audit]
+mode = "disabled"
+justification = "sandbox: SDK wire-compatibility test, not production posture"
+
+[policy]
+mode = "disabled"
+justification = "sandbox: SDK wire-compatibility test, not production posture"
 
 [keyrings.test-aes]
 algorithm = "aes-256-gcm"

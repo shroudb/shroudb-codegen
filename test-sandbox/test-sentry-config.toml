@@ -1,7 +1,7 @@
 [server]
 tcp_bind = "127.0.0.1:{{PORT}}"
 
-[storage]
+[store]
 data_dir = "{{DATA_DIR}}"
 
 [engine]
@@ -14,3 +14,17 @@ priority = 100
 principal_roles = ["admin"]
 resource_type = "document"
 action_names = ["read"]
+
+# Sandbox-wide allow at low priority so every engine's SDK happy-path
+# gets through Sentry without per-engine policy seeding. Higher-priority
+# narrow policies (like `test-permit` above) still override. Do NOT copy
+# this shape to production configs — Sentry's whole job is to deny by
+# default.
+[policies.sandbox-allow-all]
+effect = "allow"
+description = "Sandbox: permissive default for SDK end-to-end testing"
+priority = 1
+# All filters empty → match any principal / resource / action.
+principal_roles = []
+resource_type = ""
+action_names = []

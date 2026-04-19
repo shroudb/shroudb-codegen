@@ -1,8 +1,24 @@
+# Sandbox-only — audit/policy disabled, and forge's engine-level
+# policy_mode set to "open" so `check_policy` short-circuits to allow
+# when the capability is Disabled. See test-cipher-config.toml for the
+# broader sandbox rationale. `policy_mode` is a ROOT-level key so it
+# must appear before any `[section]` header.
+policy_mode = "open"
+
 [server]
 tcp_bind = "127.0.0.1:{{PORT}}"
+http_bind = "127.0.0.1:{{HTTP_PORT}}"
 
-[storage]
+[store]
 data_dir = "{{DATA_DIR}}"
+
+[audit]
+mode = "disabled"
+justification = "sandbox: SDK wire-compatibility test, not production posture"
+
+[policy]
+mode = "disabled"
+justification = "sandbox: SDK wire-compatibility test, not production posture"
 
 [cas.test-ca]
 algorithm = "ecdsa-p256"

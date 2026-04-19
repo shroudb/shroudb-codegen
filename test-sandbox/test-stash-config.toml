@@ -2,8 +2,17 @@
 [server]
 tcp_bind = "127.0.0.1:{{PORT}}"
 
-[storage]
+[store]
 data_dir = "{{DATA_DIR}}"
+
+# Sandbox-only — see test-cipher-config.toml for rationale.
+[audit]
+mode = "disabled"
+justification = "sandbox: SDK wire-compatibility test, not production posture"
+
+[policy]
+mode = "disabled"
+justification = "sandbox: SDK wire-compatibility test, not production posture"
 
 [engine]
 bucket = "stash-test"
