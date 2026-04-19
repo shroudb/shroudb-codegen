@@ -64,8 +64,8 @@ func main() {
 	_, err = db.Cipher.Rotate(ctx, "test-aes", &shroudb.CipherRotateOptions{Force: true})
 	check("rotate", err == nil)
 
-	// 3. Encrypt
-	plaintext := base64.StdEncoding.EncodeToString([]byte("hello world"))
+	// 3. Encrypt — SDK takes raw []byte and base64-encodes on the wire.
+	plaintext := []byte("hello world")
 	enc, err := db.Cipher.Encrypt(ctx, "test-aes", plaintext, nil)
 	ciphertext := ""
 	if err == nil && enc != nil {
@@ -84,11 +84,11 @@ func main() {
 		}
 	}
 
-	// 4. Decrypt
+	// 4. Decrypt — Plaintext on the response is base64-encoded.
 	if ciphertext != "" {
 		dec, err := db.Cipher.Decrypt(ctx, "test-aes", ciphertext, nil)
 		if err == nil && dec != nil {
-			check("decrypt", dec.Plaintext == plaintext)
+			check("decrypt", dec.Plaintext == base64.StdEncoding.EncodeToString(plaintext))
 		} else {
 			check("decrypt", false)
 		}
@@ -112,8 +112,8 @@ func main() {
 	// 6. Rotate ed25519 keyring for signing
 	_, _ = db.Cipher.Rotate(ctx, "test-ed25519", &shroudb.CipherRotateOptions{Force: true})
 
-	// 7. Sign
-	data := base64.StdEncoding.EncodeToString([]byte("sign this message"))
+	// 7. Sign — SDK takes raw []byte and base64-encodes on the wire.
+	data := []byte("sign this message")
 	sig, err := db.Cipher.Sign(ctx, "test-ed25519", data)
 	signature := ""
 	if err == nil && sig != nil {

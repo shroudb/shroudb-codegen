@@ -3,7 +3,6 @@ package main
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
 	"os"
 
@@ -45,8 +44,9 @@ func main() {
 		}
 	}()
 
-	secretValue := base64.StdEncoding.EncodeToString([]byte("s3cret-passw0rd"))
-	secretValueV2 := base64.StdEncoding.EncodeToString([]byte("updated-s3cret"))
+	// SDK takes raw []byte and base64-encodes on the wire.
+	secretValue := []byte("s3cret-passw0rd")
+	secretValueV2 := []byte("updated-s3cret")
 	testPath := "db/test/secret"
 
 	// Handshake sanity — every engine must answer HELLO.
@@ -130,7 +130,7 @@ func main() {
 	// 10. GetMany — batch variant emitted by `batchable = true` on GET.
 	batchPaths := []string{"db/batch/a", "db/batch/b", "db/batch/c"}
 	for i, p := range batchPaths {
-		_, _ = db.Keep.Put(ctx, p, fmt.Sprintf("v%d", i), nil)
+		_, _ = db.Keep.Put(ctx, p, []byte(fmt.Sprintf("v%d", i)))
 	}
 	calls := make([]shroudb.KeepGetCall, 0, len(batchPaths))
 	for _, p := range batchPaths {

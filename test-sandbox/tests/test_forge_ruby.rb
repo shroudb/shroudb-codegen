@@ -43,11 +43,13 @@ begin
   end
 
   # 2. CaCreate — exercises the `SUBJECT` keyword-prefix wire path.
+  # Timestamp-suffix the name so sequential language runs don't collide.
+  new_ca_name = "codegen-new-ca-rb-#{Time.now.to_i % 100000}"
   begin
     result = db.forge.ca_create(
-      "codegen-new-ca", "ecdsa-p256", "CN=Codegen New CA", ttl_days: 30
+      new_ca_name, "ecdsa-p256", "CN=Codegen New CA", ttl_days: 30
     )
-    check("ca_create", !result.nil? && result.name == "codegen-new-ca")
+    check("ca_create", !result.nil? && result.name == new_ca_name)
   rescue StandardError => e
     check("ca_create", false)
     puts "    error: #{e.message}"

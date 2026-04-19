@@ -20,6 +20,16 @@ justification = "sandbox: SDK wire-compatibility test, not production posture"
 mode = "disabled"
 justification = "sandbox: SDK wire-compatibility test, not production posture"
 
+# Static token for sandbox auth — forge's inspect/revoke dispatch
+# requires an authenticated context.
+[auth]
+method = "token"
+
+[auth.tokens.sandbox-test]
+tenant = "default"
+actor = "sandbox"
+platform = true
+
 [cas.test-ca]
 algorithm = "ecdsa-p256"
 subject = "CN=Test CA,O=ShrouDB Test"

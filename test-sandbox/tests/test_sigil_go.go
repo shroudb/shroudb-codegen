@@ -102,9 +102,10 @@ func main() {
 		fmt.Printf("    error: %v\n", err)
 	}
 
-	// 3. Schema list
-	schemaListResult, err := db.Sigil.SchemaList(ctx)
-	check("schema_list", err == nil && schemaListResult != nil)
+	// 3. Schema list — SDK returns only error (response body isn't
+	// surfaced as a typed struct for list commands).
+	err = db.Sigil.SchemaList(ctx)
+	check("schema_list", err == nil)
 	if err != nil {
 		fmt.Printf("    error: %v\n", err)
 	}

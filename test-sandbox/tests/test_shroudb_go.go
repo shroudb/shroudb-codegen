@@ -70,7 +70,7 @@ func main() {
 	}
 
 	// 4. GET
-	result, err := db.Shroudb.Get(ctx, "test-ns", "test-key", nil, nil)
+	result, err := db.Shroudb.Get(ctx, "test-ns", "test-key", false, nil)
 	check("get", err == nil && result != nil)
 	if err != nil {
 		fmt.Printf("    error: %v\n", err)
@@ -84,7 +84,7 @@ func main() {
 	}
 
 	// 6. Error: GET after delete
-	_, err = db.Shroudb.Get(ctx, "test-ns", "test-key", nil, nil)
+	_, err = db.Shroudb.Get(ctx, "test-ns", "test-key", false, nil)
 	check("error_after_delete", err != nil)
 
 	// 7. PIPELINE: atomic batch of commands on one round-trip.
@@ -113,7 +113,7 @@ func main() {
 		firstVersion, _ := first[0]["version"].(int)
 		secondVersion, _ := second[0]["version"].(int)
 		check("pipeline_idempotent_replay", firstVersion == secondVersion)
-		current, err := db.Shroudb.Get(ctx, "test-ns", "pipe-idem", nil, nil)
+		current, err := db.Shroudb.Get(ctx, "test-ns", "pipe-idem", false, nil)
 		if err == nil && current != nil {
 			check("pipeline_idempotent_value_unchanged", current.Value == "first")
 		} else {

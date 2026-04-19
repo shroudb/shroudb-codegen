@@ -49,8 +49,9 @@ begin
   # 3. ChannelCreate
   channel_name = "test-channel-#{Time.now.to_i % 10000}"
   begin
-    config = JSON.generate({ "url" => "https://example.com/webhook" })
-    result = db.courier.channel_create(channel_name, "webhook", config)
+    # F-courier-8: config moved from positional arg to keyword args.
+    config_json = JSON.generate({ "url" => "https://example.com/webhook" })
+    result = db.courier.channel_create(channel_name, "webhook", config_json: config_json)
     check("channel_create", !result.nil? && result.name == channel_name)
   rescue ShrouDB::Error => e
     ok = e.message.include?("EXISTS") || e.message.downcase.include?("exists")

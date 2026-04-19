@@ -5,15 +5,15 @@ http_bind = "127.0.0.1:{{HTTP_PORT}}"
 [store]
 data_dir = "{{DATA_DIR}}"
 
+# Sandbox-only: chronicle's engine layer enforces `require_policy` in
+# production (default true) to refuse Disabled capability. The sandbox
+# opts out explicitly. See test-cipher-config.toml for the broader
+# "SDK wire-compatibility, not production posture" rationale.
 [engine]
 max_events = 10000
 max_age_days = 1
+require_policy = false
 
-# Chronicle is a deliberate exception to engine-bootstrap's default-disabled
-# policy: ChronicleEngine enforces require_policy at the engine layer and
-# refuses a Disabled capability. The sandbox wires chronicle at a remote
-# Sentry; test-sentry-config.toml seeds a broad allow policy at priority 1
-# so chronicle's ingest/query goes through.
 [policy]
-mode = "remote"
-addr = "127.0.0.1:{{SENTRY_PORT}}"
+mode = "disabled"
+justification = "sandbox: SDK wire-compatibility test, not production posture"

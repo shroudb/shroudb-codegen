@@ -47,14 +47,17 @@ async function main(): Promise<void> {
     }
 
     // 2. CA_CREATE — exercises the `SUBJECT` keyword-prefix wire path.
+    // Timestamp-suffix the name so parallel / sequential language runs
+    // against the same server don't collide on already-created CAs.
+    const newCaName = `codegen-new-ca-ts-${Date.now() % 100000}`;
     try {
       const result = await db.forge.caCreate(
-        "codegen-new-ca",
+        newCaName,
         "ecdsa-p256",
         "CN=Codegen New CA",
         { ttl_days: 30 },
       );
-      check("ca_create", result != null && result.name === "codegen-new-ca");
+      check("ca_create", result != null && result.name === newCaName);
     } catch (e: unknown) {
       check("ca_create", false);
       console.log(`    error: ${e}`);

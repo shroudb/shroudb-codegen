@@ -6,13 +6,35 @@ tcp_bind = "127.0.0.1:{{PORT}}"
 data_dir = "{{DATA_DIR}}"
 
 # Sandbox-only — see test-cipher-config.toml for rationale.
+# Stash uses Cipher for envelope encryption on the server-encrypted
+# STORE path. stash-server supports embedded Cipher only (remote is
+# reserved for Moat deployments) — a co-located CipherEngine on the
+# shared storage.
+[cipher]
+mode = "embedded"
+
 [audit]
 mode = "disabled"
 justification = "sandbox: SDK wire-compatibility test, not production posture"
 
+# Stash's engine-level policy check fails-closed on Disabled capability
+# (DEBT-2). Point at remote Sentry which is running the sandbox-allow-all
+# seed policy — no sandbox-specific stash code path needed.
 [policy]
-mode = "disabled"
-justification = "sandbox: SDK wire-compatibility test, not production posture"
+mode = "remote"
+addr = "127.0.0.1:{{SENTRY_PORT}}"
+
+# Static token so tests can AUTH — stash's F-stash-8 dispatch posture
+# refuses tenant-scoped commands without an auth_context, even with
+# [policy] disabled. In production this is deliberate; the sandbox
+# opts in explicitly.
+[auth]
+method = "token"
+
+[auth.tokens.sandbox-test]
+tenant = "default"
+actor = "sandbox"
+platform = true
 
 [engine]
 bucket = "stash-test"

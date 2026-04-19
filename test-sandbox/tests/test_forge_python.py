@@ -48,11 +48,14 @@ async def main():
             print(f"    error: {e}")
 
         # ca_create — exercises the `SUBJECT` keyword-prefix wire path.
+        # Timestamp-suffix the name so sequential language runs don't collide.
+        import time as _time
+        new_ca_name = f"codegen-new-ca-py-{int(_time.time()) % 100000}"
         try:
             result = await db.forge.ca_create(
-                "codegen-new-ca", "ecdsa-p256", "CN=Codegen New CA", ttl_days=30
+                new_ca_name, "ecdsa-p256", "CN=Codegen New CA", ttl_days=30
             )
-            check("ca_create", result is not None and result.name == "codegen-new-ca")
+            check("ca_create", result is not None and result.name == new_ca_name)
         except Exception as e:
             check("ca_create", False)
             print(f"    error: {e}")

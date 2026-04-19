@@ -133,7 +133,7 @@ start_engine() {
     AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID:-}" \
     AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY:-}" \
     AWS_REGION="${AWS_REGION:-}" \
-    "$binary" --config "$cfg" >/dev/null 2>&1 &
+    "$binary" --config "$cfg" >"$DATA_DIR/${name}.log" 2>&1 &
   local pid=$!
   PIDS="$PIDS $pid"
 
@@ -226,10 +226,17 @@ for engine in $AVAILABLE_ENGINES; do
 
   # Set URI environment variable.
   upper=$(echo "$engine" | tr '[:lower:]' '[:upper:]')
+  # Engines whose sandbox config declares [auth] with method = "token"
+  # need the token in the URI so the SDK AUTHs on connect. See
+  # test-{stash,forge}-config.toml for why those engines require auth.
+  token_prefix=""
+  case "$engine" in
+    stash|forge) token_prefix="sandbox-test@" ;;
+  esac
   if [[ "$engine" == "shroudb" ]]; then
-    uri="shroudb://127.0.0.1:$port"
+    uri="shroudb://${token_prefix}127.0.0.1:$port"
   else
-    uri="shroudb-${engine}://127.0.0.1:$port"
+    uri="shroudb-${engine}://${token_prefix}127.0.0.1:$port"
   fi
   export "SHROUDB_${upper}_TEST_URI=$uri"
   eval "URI_${engine}=\"$uri\""

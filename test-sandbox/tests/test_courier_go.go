@@ -63,10 +63,13 @@ func main() {
 	_, err = db.Courier.ChannelList(ctx)
 	check("channel_list", err == nil)
 
-	// 3. ChannelCreate
+	// 3. ChannelCreate — F-courier-8 made the config JSON-blob form a
+	// keyword arg (CONFIG_JSON) and it's now part of the options struct.
 	channelName := fmt.Sprintf("test-channel-%d", time.Now().Unix()%10000)
-	config := `{"url":"https://example.com/webhook"}`
-	ccResult, err := db.Courier.ChannelCreate(ctx, channelName, "webhook", config)
+	configJSON := `{"url":"https://example.com/webhook"}`
+	ccResult, err := db.Courier.ChannelCreate(ctx, channelName, "webhook", &shroudb.CourierChannelCreateOptions{
+		ConfigJson: &configJSON,
+	})
 	if err != nil && strings.Contains(strings.ToLower(err.Error()), "exists") {
 		check("channel_create", true)
 	} else {

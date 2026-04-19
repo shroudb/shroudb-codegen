@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"time"
 
 	shroudb "github.com/shroudb/shroudb-go"
 )
@@ -61,10 +62,12 @@ func main() {
 	}
 
 	// 2. CaCreate — exercises the `SUBJECT` keyword-prefix wire path.
+	// Timestamp-suffix the name so sequential language runs don't collide.
 	ttl := 30
-	caCreated, err := db.Forge.CaCreate(ctx, "codegen-new-ca", "ecdsa-p256", "CN=Codegen New CA",
+	newCaName := fmt.Sprintf("codegen-new-ca-go-%d", time.Now().Unix()%100000)
+	caCreated, err := db.Forge.CaCreate(ctx, newCaName, "ecdsa-p256", "CN=Codegen New CA",
 		&shroudb.ForgeCaCreateOptions{TtlDays: &ttl})
-	check("ca_create", err == nil && caCreated != nil && caCreated.Name == "codegen-new-ca")
+	check("ca_create", err == nil && caCreated != nil && caCreated.Name == newCaName)
 	if err != nil {
 		fmt.Printf("    error: %v\n", err)
 	}
